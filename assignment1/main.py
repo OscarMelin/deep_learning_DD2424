@@ -7,13 +7,42 @@ def unpickle(file):
         dict = pickle.load(fo, encoding='bytes')
     return dict
 
+def compute_grads_num_slow(X, Y, W, b, _lambda, h):
+    no = W.shape[0]
+    d = X.shape[0]
+
+    grad_W = np.zeros_like(W)
+    grad_b = np.zeros((no,1))
+
+    print("Starting with b")
+    for i in range(b.shape[0]):
+        b_try = b
+        b_try[i] = b_try[i] - h
+        c1 = compute_cost(X, Y, W, b_try, _lambda)
+        b_try = b
+        b_try[i] = b_try[i] + h
+        c2 = compute_cost(X, Y, W, b_try, _lambda)
+        grad_b[i] = (c2-c1) / (2*h)
+
+    print("Starting with W")
+    for i in range(W.shape[0]):
+        for j in range(W.shape[1]):
+            W_try = W
+            W_try[i][j] = W_try[i][j] - h
+            c1 = compute_cost(X, Y, W_try, b, _lambda)
+            W_try = W
+            W_try[i][j] = W_try[i][j] + h
+            c2 = compute_cost(X, Y, W_try, b, _lambda)
+            grad_b[i] = (c2-c1) / (2*h)
+    
+    return grad_W, grad_b
+
 def compute_grads_num(X, Y, W, b, _lambda, h):
     no = W.shape[0]
     d = X.shape[0]
 
     grad_W = np.zeros_like(W)
     grad_b = np.zeros((no,1))
-    grad_b_2 = np.zeros((no,1))
 
     c = compute_cost(X, Y, W, b, _lambda)
 
@@ -128,6 +157,9 @@ if __name__ == '__main__':
 
     # cost = compute_cost(X, Y, W, b, 0.1)
     # compute_accuracy(X, y, W, b)
-    num_grad_W, num_grad_b = compute_grads_num(X[:,:20], Y[:,:20], W, b, 0, 1e-6)
-    print(num_grad_W)
+    num_grad_W, num_grad_b = compute_grads_num(X[:,:1], Y[:,:1], W, b, 0, 1e-6)
+    # print(num_grad_W)
     print(num_grad_b)
+    num_grad_W_slow, num_grad_b_slow = compute_grads_num_slow(X[:,:1], Y[:,:1], W, b, 0, 1e-6)
+    # print(num_grad_W_slow)
+    print(num_grad_b_slow)
