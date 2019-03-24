@@ -1,103 +1,13 @@
-import pickle
-import matplotlib.pyplot as plt
 import numpy as np
-
-def unpickle(file):
-    with open(file, 'rb') as fo:
-        dict = pickle.load(fo, encoding='bytes')
-    return dict
-
-def compute_grads_num_slow(X, Y, W, b, _lambda, h):
-    no = W.shape[0]
-    d = X.shape[0]
-
-    grad_W = np.zeros_like(W)
-    grad_b = np.zeros((no,1))
-
-    print("Starting with b")
-    for i in range(b.shape[0]):
-        b_try = b
-        b_try[i] = b_try[i] - h
-        c1 = compute_cost(X, Y, W, b_try, _lambda)
-        b_try = b
-        b_try[i] = b_try[i] + h
-        c2 = compute_cost(X, Y, W, b_try, _lambda)
-        grad_b[i] = (c2-c1) / (2*h)
-
-    print("Starting with W")
-    for i in range(W.shape[0]):
-        for j in range(W.shape[1]):
-            W_try = W
-            W_try[i][j] = W_try[i][j] - h
-            c1 = compute_cost(X, Y, W_try, b, _lambda)
-            W_try = W
-            W_try[i][j] = W_try[i][j] + h
-            c2 = compute_cost(X, Y, W_try, b, _lambda)
-            grad_b[i] = (c2-c1) / (2*h)
-    
-    return grad_W, grad_b
-
-def compute_grads_num(X, Y, W, b, _lambda, h):
-    no = W.shape[0]
-    d = X.shape[0]
-
-    grad_W = np.zeros_like(W)
-    grad_b = np.zeros((no,1))
-
-    c = compute_cost(X, Y, W, b, _lambda)
-
-    print("Starting with b")
-    for i in range(b.shape[0]):
-        b_try = b
-        b_try[i] = b_try[i] + h
-        c2 = compute_cost(X, Y, W, b_try, _lambda)
-        grad_b[i] = (c2-c) /h
-
-    print("Starting with W")
-    for i in range(W.shape[0]):
-        for j in range(W.shape[1]):
-            W_try = W
-            W_try[i][j] = W_try[i][j] + h
-            c2 = compute_cost(X, Y, W_try, b, _lambda)
-            grad_W[i][j] = (c2-c) /h
-    
-    return grad_W, grad_b
-
-def make_one_hot(y):
-    """ create one-hot column vectors """
-    one_hot = np.zeros((len(y), 10))
-    for i in range(len(y)):
-        one_hot[i, y[i]] = 1.
-    return one_hot.transpose(1,0)
-
-def load_batch(batch_name):
-    """  
-    X = (3072, 10000) each column is an image
-    Y = (10, 10000) each colum is a one hot vector
-    y = labels for each column
-    """
-    data_dict = unpickle('./datasets/cifar-10-batches-py/' + batch_name)
-    X = data_dict[b'data'] / 255
-    X = X.reshape(10000, 3, 32, 32).transpose(0,2,3,1).reshape(10000, 3072).transpose(1,0)
-    y = data_dict[b'labels']
-    Y = make_one_hot(y)
-    return X, Y, y
-
-def visulize_5(X):
-    """ Show 5x5 images from X
-    """
-    fig, axes1 = plt.subplots(5,5,figsize=(3,3))
-    for j in range(5):
-        for k in range(5):
-            i = np.random.choice(range(len(X)))
-            axes1[j][k].set_axis_off()
-            axes1[j][k].imshow(X[:,i].reshape(32, 32, 3))
-    plt.show()
+from helpers import *
 
 def softmax(s):
     """Compute softmax values for each sets of scores in s"""
-    exps = np.exp(s)
-    return exps / np.sum(exps, axis=0)
+    exps = np.exp(s) # (10, n)
+    ones = np.ones((1, s.shape[0])) # (1, 10)
+    denom = np.matmul(ones, np.exp(s)) # (1, n)
+    p = exps / denom # (10, n)
+    return p
 
 def evaluate_classifier(X, W, b):
     """
@@ -107,7 +17,8 @@ def evaluate_classifier(X, W, b):
     """
     n = X.shape[1]
     WX = np.matmul(W, X)
-    b_big = np.repeat(b, n, axis=1) # repeat column vector b, n times
+    # b_big = np.repeat(b, n, axis=1) # repeat column vector b, n times
+    b_big = np.matmul(b, np.ones((n, 1)).transpose())
     s = WX + b_big
     p = softmax(s)
     return p
@@ -120,11 +31,14 @@ def compute_cost(X, Y, W, b, _lambda):
     """
     n = X.shape[1]
     p = evaluate_classifier(X, W, b) #
-
+    # cross entropy for one x and one one hot y column vector
+    # is -log(y^T * p) which is basically value of p[true_label]
+    # Therefore we need to use the diagonal
     py = np.matmul(Y.transpose(), p)  # (n, n)
-    cross_entropy = -np.log(py) # (n, n)
+    py = np.diag(py).reshape(1, n) # (1, n)
+    cross_entropy = -np.log(py) # (1, n)
     regulation = _lambda * np.sum(W**2) # scalar
-    J = np.sum(cross_entropy) / n + regulation # scalar
+    J = (1/n) * np.sum(cross_entropy) + regulation # scalar
     return J
 
 def predict(p):
@@ -140,10 +54,31 @@ def compute_accuracy(X, y, W, b):
             zero_one_loss += 1
     
     accuracy = 1 - zero_one_loss / X.shape[1]
+    return accuracy
 
 def compute_gradients(X, Y, P, W, _lambda):
-    print("")
+    """
+    X = (3072, n)
+    Y = (10, n)
+    P = (10, n)
+    grad_W = (10, 3072)
+    grad_b = (10, 1)
+    """
+    # From lec3 slides 
+    n = X.shape[1]
+    G_batch = -(Y - P) # (10, n)
+
+    grad_W = (1/n) * np.matmul(G_batch, X.transpose())
+
+    # Regulation term
+    grad_W += 2 * _lambda * W
     
+    # grad_b = (1/n) * np.sum(G_batch, axis=1) #.reshape(10, 1) # from (10,) to (10, 1)
+    ones = np.ones((n, 1))
+
+    grad_b = (1/n) * np.matmul(G_batch, np.ones((n, 1)))  #.reshape(10, 1) # from (10,) to (10, 1)
+    return grad_W, grad_b
+
 
 if __name__ == '__main__':
     X, Y, y = load_batch('data_batch_1')
@@ -152,14 +87,42 @@ if __name__ == '__main__':
     n_tot = 10000
     d = 3072
 
+    _lambda = 0
+    n_batch = 100
+    eta = 0.01
+    n_epochs = 40
+
+    # np.random.seed(400)
+    h = 1e-6
+
     W = np.random.normal(0, 0.1, size=(K, d))
     b = np.random.normal(0, 0.1, size=(K, 1))
 
-    # cost = compute_cost(X, Y, W, b, 0.1)
-    # compute_accuracy(X, y, W, b)
-    num_grad_W, num_grad_b = compute_grads_num(X[:,:1], Y[:,:1], W, b, 0, 1e-6)
-    # print(num_grad_W)
-    print(num_grad_b)
-    num_grad_W_slow, num_grad_b_slow = compute_grads_num_slow(X[:,:1], Y[:,:1], W, b, 0, 1e-6)
-    # print(num_grad_W_slow)
-    print(num_grad_b_slow)
+    # mini_batch_X, mini_batch_Y = X[:,:n_batch], Y[:,:n_batch]
+    # cost = compute_cost(mini_batch_X, mini_batch_Y, W, b, _lambda)
+    # P = evaluate_classifier(mini_batch_X, W, b)
+    # grad_W, grad_b = compute_gradients(mini_batch_X, mini_batch_Y, P, W, _lambda)
+    # num_grad_W, num_grad_b = compute_grads_num(mini_batch_X, mini_batch_Y, W, b, _lambda, h, compute_cost)
+    # comp_W = compare_gradients(grad_W, num_grad_W)
+    # print(comp_W)
+    # comp_b = compare_gradients(grad_b, num_grad_b)
+    # print(comp_b)
+
+    for epoch_i in range(n_epochs):
+        shuffle(X, Y)
+        for X_batch, Y_batch in get_batches(n_batch, X, Y):
+            P = evaluate_classifier(X_batch, W, b)
+            grad_W, grad_b = compute_gradients(X_batch, Y_batch, P, W, _lambda)
+            W = W - (eta * grad_W)
+            b = b - (eta * grad_b)
+        
+        print()
+        print(".... Epoch %d completed ...." % (epoch_i))
+        # print("Current cost: %f" % (compute_cost(X, Y, W, b, _lambda)))
+        print()
+    
+    acc = compute_accuracy(X, y, W, b)
+    print("The final accuracy of the model after %d epochs is: %f" % (n_epochs, acc))
+    print("Current cost: %f" % (compute_cost(X, Y, W, b, _lambda)))
+
+    visulize_weights(W)
