@@ -119,7 +119,7 @@ if __name__ == '__main__':
     costs_valid = np.zeros(n_epochs)
 
     for epoch_i in range(n_epochs):
-        shuffle(X, Y)
+        # shuffle(X, Y)
         for X_batch, Y_batch in get_batches(n_batch, X, Y):
             P = evaluate_classifier(X_batch, W, b)
             grad_W, grad_b = compute_gradients(X_batch, Y_batch, P, W, _lambda)

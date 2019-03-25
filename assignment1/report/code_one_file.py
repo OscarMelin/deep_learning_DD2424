@@ -9,13 +9,6 @@ def unpickle(file):
         dict = pickle.load(fo, encoding='bytes')
     return dict
 
-def shuffle(X, Y):
-    index = np.arange(X.shape[1])
-    np.random.shuffle(index)
-    X = X[:,index]
-    Y = Y[:,index]
-    return X, Y
-
 def get_batches(n_batch, X, Y):
     """ Return n_batch of the X 
     vector at a time
@@ -148,7 +141,6 @@ def evaluate_classifier(X, W, b):
     """
     n = X.shape[1]
     WX = np.matmul(W, X)
-    # b_big = np.repeat(b, n, axis=1) # repeat column vector b, n times
     b_big = np.matmul(b, np.ones((n, 1)).transpose())
     s = WX + b_big
     p = softmax(s)
@@ -232,7 +224,7 @@ if __name__ == '__main__':
     n_tot = 10000
     d = 3072
 
-    _lambda = 1
+    _lambda = 0
     n_batch = 100
     eta = 0.01
     n_epochs = 40
@@ -250,7 +242,6 @@ if __name__ == '__main__':
     costs_valid = np.zeros(n_epochs)
 
     for epoch_i in range(n_epochs):
-        shuffle(X, Y)
         for X_batch, Y_batch in get_batches(n_batch, X, Y):
             P = evaluate_classifier(X_batch, W, b)
             grad_W, grad_b = compute_gradients(X_batch, Y_batch, P, W, _lambda)
