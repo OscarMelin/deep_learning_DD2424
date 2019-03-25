@@ -37,7 +37,7 @@ def compute_grads_num_slow(X, Y, W, b, _lambda, h, compute_cost):
         b_try = np.copy(b)
         b_try[i] = b_try[i] - h
         c1 = compute_cost(X, Y, W, b_try, _lambda)
-        b_try = b
+        b_try = np.copy(b)
         b_try[i] = b_try[i] + h
         c2 = compute_cost(X, Y, W, b_try, _lambda)
         grad_b[i] = (c2-c1) / (2*h)
@@ -47,10 +47,10 @@ def compute_grads_num_slow(X, Y, W, b, _lambda, h, compute_cost):
             W_try = np.copy(W)
             W_try[i][j] = W_try[i][j] - h
             c1 = compute_cost(X, Y, W_try, b, _lambda)
-            W_try = W
+            W_try = np.copy(W)
             W_try[i][j] = W_try[i][j] + h
             c2 = compute_cost(X, Y, W_try, b, _lambda)
-            grad_b[i] = (c2-c1) / (2*h)
+            grad_W[i][j] = (c2-c1) / (2*h)
     
     return grad_W, grad_b
 

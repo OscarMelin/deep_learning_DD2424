@@ -82,31 +82,39 @@ def compute_gradients(X, Y, P, W, _lambda):
 
 if __name__ == '__main__':
     X, Y, y = load_batch('data_batch_1')
+    X_valid, Y_valid, y_valid = load_batch('data_batch_2')
     # visulize_5(X)
     K = 10
     n_tot = 10000
     d = 3072
 
-    _lambda = 0
+    _lambda = 1
     n_batch = 100
     eta = 0.01
     n_epochs = 40
 
-    # np.random.seed(400)
+    np.random.seed(400)
     h = 1e-6
 
     W = np.random.normal(0, 0.1, size=(K, d))
     b = np.random.normal(0, 0.1, size=(K, 1))
 
-    # mini_batch_X, mini_batch_Y = X[:,:n_batch], Y[:,:n_batch]
-    # cost = compute_cost(mini_batch_X, mini_batch_Y, W, b, _lambda)
-    # P = evaluate_classifier(mini_batch_X, W, b)
-    # grad_W, grad_b = compute_gradients(mini_batch_X, mini_batch_Y, P, W, _lambda)
-    # num_grad_W, num_grad_b = compute_grads_num(mini_batch_X, mini_batch_Y, W, b, _lambda, h, compute_cost)
-    # comp_W = compare_gradients(grad_W, num_grad_W)
-    # print(comp_W)
-    # comp_b = compare_gradients(grad_b, num_grad_b)
-    # print(comp_b)
+
+    n_batch = 100
+    mini_batch_X, mini_batch_Y = X[:,:n_batch], Y[:,:n_batch]
+    cost = compute_cost(mini_batch_X, mini_batch_Y, W, b, _lambda)
+    P = evaluate_classifier(mini_batch_X, W, b)
+    grad_W, grad_b = compute_gradients(mini_batch_X, mini_batch_Y, P, W, _lambda)
+    num_grad_W, num_grad_b = compute_grads_num_slow(mini_batch_X, mini_batch_Y, W, b, _lambda, h, compute_cost)
+    comp_W = compare_gradients(grad_W, num_grad_W)
+    print(comp_W)
+    comp_b = compare_gradients(grad_b, num_grad_b)
+    print(comp_b)
+
+    exit()
+
+    costs_train = np.zeros(n_epochs)
+    costs_valid = np.zeros(n_epochs)
 
     for epoch_i in range(n_epochs):
         shuffle(X, Y)
@@ -116,13 +124,21 @@ if __name__ == '__main__':
             W = W - (eta * grad_W)
             b = b - (eta * grad_b)
         
+        costs_train[epoch_i] = compute_cost(X, Y, W, b, _lambda)
+        costs_valid[epoch_i] = compute_cost(X_valid, Y_valid, W, b, _lambda)
         print()
         print(".... Epoch %d completed ...." % (epoch_i))
-        # print("Current cost: %f" % (compute_cost(X, Y, W, b, _lambda)))
+        # print("Current cost: %f" % (costs_train[epoch_i])))
         print()
     
     acc = compute_accuracy(X, y, W, b)
-    print("The final accuracy of the model after %d epochs is: %f" % (n_epochs, acc))
-    print("Current cost: %f" % (compute_cost(X, Y, W, b, _lambda)))
+    print("The accuracy of the model: $%f$ \\\\" % ( acc))
+    print("The last cost: $%f$" % (costs_train[-1]))
 
+    print(costs_train[0])
+
+    plt.plot(np.arange(n_epochs)[1:], costs_train[1:], 'g', label='training loss')
+    plt.plot(np.arange(n_epochs)[1:], costs_valid[1:], 'r', label='validation loss')
+    plt.legend()
+    plt.show()
     visulize_weights(W)
