@@ -33,9 +33,11 @@ def compute_cost(X, Y, W, b, _lambda):
     p = evaluate_classifier(X, W, b) #
     # cross entropy for one x and one one hot y column vector
     # is -log(y^T * p) which is basically value of p[true_label]
-    # Therefore we need to use the diagonal
-    py = np.matmul(Y.transpose(), p)  # (n, n)
-    py = np.diag(py).reshape(1, n) # (1, n)
+    # Therefore we need to use the diagonal of np.matmul(Y.trasnpose(), p)
+    # py = np.diag(py).reshape(1, n) # (1, n)
+    # Or use the elementwise mult and then sum
+    py = np.multiply(Y, p)  # (10, n)
+    py = np.sum(py, axis=0).reshape(1, n) # (1, n)
     cross_entropy = -np.log(py) # (1, n)
     regulation = _lambda * np.sum(W**2) # scalar
     J = (1/n) * np.sum(cross_entropy) + regulation # scalar
@@ -73,7 +75,6 @@ def compute_gradients(X, Y, P, W, _lambda):
     # Regulation term
     grad_W += 2 * _lambda * W
     
-    ones = np.ones((n, 1))
     grad_b = (1/n) * np.matmul(G_batch, np.ones((n, 1)))
 
     return grad_W, grad_b
@@ -87,30 +88,18 @@ def check_gradients(X,Y,W,b,_lambda):
     grad_W, grad_b = compute_gradients(mini_batch_X, mini_batch_Y, P, W, _lambda)
     num_grad_W, num_grad_b = compute_grads_num_slow(mini_batch_X, mini_batch_Y, W, b, _lambda, h, compute_cost)
     comp_W = compare_gradients(grad_W, num_grad_W)
-    print("W relative error: %f " % (comp_W))
+    print("W relative error: ")
+    print(comp_W)
     comp_b = compare_gradients(grad_b, num_grad_b)
-    print("b relative error: %f " % (comp_b))
+    print("b relative error:")
+    print(comp_b)
 
 
-if __name__ == '__main__':
-    X, Y, y = load_batch('data_batch_1')
-    X_valid, Y_valid, y_valid = load_batch('data_batch_2')
-    X_test, Y_test, y_test = load_batch('test_batch')
-    # visulize_5(X)
-    K = 10
-    n_tot = 10000
-    d = 3072
+def train_model(X, Y, _lambda, n_batch, eta, n_epochs, X_test, y_test):
+    xavier = 1/np.sqrt(d)
 
-    _lambda = 1
-    n_batch = 100
-    eta = 0.01
-    n_epochs = 40
-
-    # np.random.seed(400)
-    h = 1e-6
-
-    W = np.random.normal(0, 0.1, size=(K, d))
-    b = np.random.normal(0, 0.1, size=(K, 1))
+    W = np.random.normal(0, xavier, size=(K, d))
+    b = np.random.normal(0, xavier, size=(K, 1))
 
     # check_gradients(X, Y, W, b, _lambda)
     # exit()
@@ -125,7 +114,76 @@ if __name__ == '__main__':
             grad_W, grad_b = compute_gradients(X_batch, Y_batch, P, W, _lambda)
             W = W - (eta * grad_W)
             b = b - (eta * grad_b)
-        
+        # decay learning rate
+        eta *= 0.9
+    acc = compute_accuracy(X_test, y_test, W, b)
+    return acc
+
+
+
+def grid_search(X, Y, X_test, y_test):
+    _lambdas = [0, 0.001, 0.0001]
+    n_batches = [64,100, 128]
+    etas = [0.01, 0.02, 0.03]
+
+    accs = []
+    vals = []
+    for _lambda in _lambdas:
+        for n_batch in n_batches:
+            for eta in etas:
+                acc = train_model(X, Y, _lambda, n_batch, eta, 40, X_test, y_test)
+                accs.append(acc)
+                vals.append("lambda: %f, n_batch: %d and eta: %f" % (_lambda, n_batch, eta))
+                print("one done")
+
+    max_i = np.argmax(accs)
+    print(max_i)
+    print(accs)
+    print(vals[max_i])
+    
+
+
+
+if __name__ == '__main__':
+    X, Y, y = load_batch('data_batch_1')
+    X_valid, Y_valid, y_valid = load_batch('data_batch_2')
+    X_test, Y_test, y_test = load_batch('test_batch')
+    # visulize_5(X)
+    K = 10
+    n_tot = 10000
+    d = 3072
+
+    # grid_search(X, Y, X_test, y_test)
+    # exit()
+
+    _lambda = 0.0001
+    n_batch = 64
+    eta = 0.02
+    n_epochs = 40
+
+    h = 1e-6
+
+    xavier = 1/np.sqrt(d)
+
+    W = np.random.normal(0, xavier, size=(K, d))
+    b = np.random.normal(0, xavier, size=(K, 1))
+
+    # check_gradients(X, Y, W, b, _lambda)
+    # exit()
+
+    costs_train = np.zeros(n_epochs)
+    costs_valid = np.zeros(n_epochs)
+
+    for epoch_i in range(n_epochs):
+        shuffle(X, Y)
+        for X_batch, Y_batch in get_batches(n_batch, X, Y):
+            P = evaluate_classifier(X_batch, W, b)
+            grad_W, grad_b = compute_gradients(X_batch, Y_batch, P, W, _lambda)
+            W = W - (eta * grad_W)
+            b = b - (eta * grad_b)
+        # decay learning rate
+        eta *= 0.9
+
         costs_train[epoch_i] = compute_cost(X, Y, W, b, _lambda)
         costs_valid[epoch_i] = compute_cost(X_valid, Y_valid, W, b, _lambda)
         print()
@@ -139,4 +197,11 @@ if __name__ == '__main__':
     plt.plot(np.arange(n_epochs), costs_valid, 'r', label='validation loss')
     plt.legend()
     plt.show()
+
+    # P = evaluate_classifier(X, W, b)
+    # grad_W, grad_b = compute_gradients(X, Y, P, W, _lambda)
+    # plt.hist(grad_W.reshape(K*d), bins=1000)
+    # plt.show()
+
+
     visulize_weights(W)
