@@ -62,11 +62,15 @@ def compute_grads_num(X, Y, W, b, _lambda, h, compute_cost):
     grad_b = np.zeros((no,1))
 
     c = compute_cost(X, Y, W, b, _lambda)
+    if len(c) > 0:
+        c = c[0]
 
     for i in range(b.shape[0]):
         b_try = np.copy(b)
         b_try[i] = b_try[i] + h
         c2 = compute_cost(X, Y, W, b_try, _lambda)
+        if len(c2) > 0:
+            c2 = c2[0]
         grad_b[i] = (c2-c) / h
 
     for i in range(W.shape[0]):
@@ -74,6 +78,8 @@ def compute_grads_num(X, Y, W, b, _lambda, h, compute_cost):
             W_try = np.copy(W)
             W_try[i][j] = W_try[i][j] + h
             c2 = compute_cost(X, Y, W_try, b, _lambda)
+            if len(c2) > 0:
+                c2 = c2[0]
             grad_W[i][j] = (c2-c) /h
     
     return grad_W, grad_b
