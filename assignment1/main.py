@@ -199,6 +199,8 @@ def train_model(X, Y, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, X_test,
         # decay learning rate
         eta *= 0.9
 
+        
+
         if save:
             if loss == 'SVM':
                 costs_train[epoch_i] = compute_cost_SVM(X, Y, W, b, _lambda)[0]
@@ -223,7 +225,24 @@ def train_model(X, Y, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, X_test,
 
 if __name__ == '__main__':
     X, Y, y = load_batch('data_batch_1')
-    X_valid, Y_valid, y_valid = load_batch('data_batch_2')
+    # X_2, Y_2, y_2 = load_batch('data_batch_2')
+    # # X_3, Y_3, y_3 = load_batch('data_batch_3')
+    # X_4, Y_4, y_4 = load_batch('data_batch_4')
+    X_5, Y_5, y_5 = load_batch('data_batch_5')
+    # X = np.append(X, X_2, axis=1)
+    # Y = np.append(Y, Y_2, axis=1)
+    # y = np.append(y, y_2, axis=0)
+    # X = np.append(X, X_3, axis=1)
+    # Y = np.append(Y, Y_3, axis=1)
+    # y = np.append(y, y_3, axis=0)
+    # X = np.append(X, X_4, axis=1)
+    # Y = np.append(Y, Y_4, axis=1)
+    # y = np.append(y, y_4, axis=0)
+    # X = np.append(X, X_5[:,:9000], axis=1)
+    # Y = np.append(Y, Y_5[:,:9000], axis=1)
+    # y = np.append(y, y_5[:9000], axis=0)
+    # X_valid, Y_valid, y_valid = X_5[:,:9000], Y_5[:,:9000], y[:9000]
+    X_valid, Y_valid, y_valid = X_5, Y_5, y
     X_test, Y_test, y_test = load_batch('test_batch')
     # visulize_5(X)
     K = 10
@@ -240,5 +259,5 @@ if __name__ == '__main__':
 
     h = 1e-6
 
-    train_model(X, Y, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, X_test, y_test, save=True, loss='SVM')
+    train_model(X, Y, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, X_test, y_test, save=True, loss='cross')
     
