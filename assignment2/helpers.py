@@ -54,37 +54,45 @@ def compute_grads_num_slow(X, Y, W, b, _lambda, h, compute_cost):
     
     return grad_W, grad_b
 
-def compute_grads_num(X, Y, W, b, _lambda, h, compute_cost):
-    no = W.shape[0]
+def compute_grads_num(X, Y, Ws, bs, _lambda, h, compute_cost):
+    no = Ws[1].shape[0]
     d = X.shape[0]
 
-    grad_W = np.zeros_like(W)
-    grad_b = np.zeros((no,1))
+    grad_Ws = []
+    grad_bs = []
 
-    c = compute_cost(X, Y, W, b, _lambda)
-    if len(c) > 0:
-        c = c[0]
+    c = compute_cost(X, Y, Ws, bs, _lambda)
 
-    for i in range(b.shape[0]):
-        b_try = np.copy(b)
-        b_try[i] = b_try[i] + h
-        c2 = compute_cost(X, Y, W, b_try, _lambda)
-        if len(c2) > 0:
-            c2 = c2[0]
-        grad_b[i] = (c2-c) / h
+    for layer in range(len(Ws)):
+        grad_W = np.zeros_like(Ws[layer])
+        grad_b = np.zeros_like(bs[layer])
+        for i in range(bs[layer].shape[0]):
+            b_try = np.copy(bs[layer])
+            b_try[i] = b_try[i] + h
+            temp = bs[layer]
+            bs[layer] = b_try
+            c2 = compute_cost(X, Y, Ws, bs, _lambda)
+            bs[layer] = temp
+            grad_b[i] = (c2-c) / h
+        print("Done with b")
 
-    for i in range(W.shape[0]):
-        for j in range(W.shape[1]):
-            W_try = np.copy(W)
-            W_try[i][j] = W_try[i][j] + h
-            c2 = compute_cost(X, Y, W_try, b, _lambda)
-            if len(c2) > 0:
-                c2 = c2[0]
-            grad_W[i][j] = (c2-c) /h
+        for i in range(Ws[layer].shape[0]):
+            for j in range(Ws[layer].shape[1]):
+                W_try = np.copy(Ws[layer])
+                W_try[i][j] = W_try[i][j] + h
+                temp = Ws[layer]
+                Ws[layer] = W_try
+                c2 = compute_cost(X, Y, Ws, bs, _lambda)
+                Ws[layer] = temp
+                grad_W[i][j] = (c2-c) /h
+        print("Done with W")
+        grad_Ws.append(grad_W)
+        grad_bs.append(grad_b)
+        print("Done with one layer")
     
-    return grad_W, grad_b
+    return grad_Ws, grad_bs
 
-def compare_gradients(grad, num_grad):
+def relative_error(grad, num_grad):
     nominator = np.sum(np.abs(grad - num_grad))
     demonimator =  max(1e-6, np.sum(np.abs(grad)) + np.sum(np.abs(num_grad)))
     return nominator / demonimator
@@ -103,15 +111,26 @@ def load_batch(batch_name):
     y = labels for each column
     """
     data_dict = unpickle('./datasets/cifar-10-batches-py/' + batch_name)
-    X = data_dict[b'data'] / 255 # between 0 and 1
+    X = data_dict[b'data']
     X = X.reshape(10000, 3, 32, 32).transpose(0,2,3,1).reshape(10000, 3072).transpose(1,0) # get (rgb) not rrrgggbbb
+
+    # center
+    # X = X / 255 # between 0 and 1
+    # X_mean = np.mean(X, axis=1, keepdims=True)
+    # X = X - X_mean # Center with mean 0
+
+    # normalize
     X_mean = np.mean(X, axis=1, keepdims=True)
-    X = X - X_mean # Center with mean 0
+    X_std = np.std(X, axis=1, keepdims=True)
+    
+    X = X - X_mean
+    X = X / X_std
+
     y = data_dict[b'labels']
     Y = make_one_hot(y)
     return X, Y, y
 
-def visulize_5(X):
+def visulize_25(X):
     """ Show 5x5 images from X
     """
     fig, axes1 = plt.subplots(5,5,figsize=(3,3))
@@ -122,16 +141,17 @@ def visulize_5(X):
             axes1[j][k].imshow(X[:,i].reshape(32, 32, 3))
     plt.show()            
 
-def visulize_weights(W):
+def visulize_weights(W, title):
     """ Show all the weight vectors as pictures
     """
-    fig, axes1 = plt.subplots(2,5,figsize=(3,3))
+    fig, axes1 = plt.subplots(6,8,figsize=(3,3))
     i = 0
-    for j in range(2):
-        for k in range(5):
+    for j in range(6):
+        for k in range(8):
             im = W[i,:].reshape(32, 32, 3)
             im = (im - np.min(im)) / (np.max(im) - np.min(im))
             axes1[j][k].set_axis_off()
             axes1[j][k].imshow(im)
             i += 1
+    fig.suptitle(title)
     plt.show()
