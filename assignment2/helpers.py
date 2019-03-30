@@ -103,8 +103,10 @@ def load_batch(batch_name):
     y = labels for each column
     """
     data_dict = unpickle('./datasets/cifar-10-batches-py/' + batch_name)
-    X = data_dict[b'data'] / 255
-    X = X.reshape(10000, 3, 32, 32).transpose(0,2,3,1).reshape(10000, 3072).transpose(1,0)
+    X = data_dict[b'data'] / 255 # between 0 and 1
+    X = X.reshape(10000, 3, 32, 32).transpose(0,2,3,1).reshape(10000, 3072).transpose(1,0) # get (rgb) not rrrgggbbb
+    X_mean = np.mean(X, axis=1, keepdims=True)
+    X = X - X_mean # Center with mean 0
     y = data_dict[b'labels']
     Y = make_one_hot(y)
     return X, Y, y

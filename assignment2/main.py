@@ -93,12 +93,7 @@ def check_gradients(X,Y,W,b,_lambda):
     print("b relative error:")
     print(comp_b)
 
-def train_model(X, Y, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, X_test, y_test, save=False):
-    xavier = 1/np.sqrt(d)
-
-    W = np.random.normal(0, xavier, size=(K, d))
-    b = np.random.normal(0, xavier, size=(K, 1))
-
+def train_model(X, Y, W, b, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, X_test, y_test, save=False):
     costs_train = np.zeros(n_epochs)
     costs_valid = np.zeros(n_epochs)
 
@@ -133,30 +128,20 @@ def train_model(X, Y, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, X_test,
         visulize_weights(W)
     return acc
 
+def init_weights(size_in, size_out):
+    xavier = 1/np.sqrt(size_in)
+    W = np.random.normal(0, xavier, size=(size_out, size_in))
+    b = np.random.normal(0, xavier, size=(size_out, 1))
+    return W, b
+
 if __name__ == '__main__':
     X, Y, y = load_batch('data_batch_1')
-    # X_2, Y_2, y_2 = load_batch('data_batch_2')
-    # # X_3, Y_3, y_3 = load_batch('data_batch_3')
-    # X_4, Y_4, y_4 = load_batch('data_batch_4')
-    X_5, Y_5, y_5 = load_batch('data_batch_5')
-    # X = np.append(X, X_2, axis=1)
-    # Y = np.append(Y, Y_2, axis=1)
-    # y = np.append(y, y_2, axis=0)
-    # X = np.append(X, X_3, axis=1)
-    # Y = np.append(Y, Y_3, axis=1)
-    # y = np.append(y, y_3, axis=0)
-    # X = np.append(X, X_4, axis=1)
-    # Y = np.append(Y, Y_4, axis=1)
-    # y = np.append(y, y_4, axis=0)
-    # X = np.append(X, X_5[:,:9000], axis=1)
-    # Y = np.append(Y, Y_5[:,:9000], axis=1)
-    # y = np.append(y, y_5[:9000], axis=0)
-    # X_valid, Y_valid, y_valid = X_5[:,:9000], Y_5[:,:9000], y[:9000]
-    X_valid, Y_valid, y_valid = X_5, Y_5, y
+    X_valid, Y_valid, y_valid = load_batch('data_batch_2')
     X_test, Y_test, y_test = load_batch('test_batch')
     # visulize_5(X)
     K = 10
     n_tot = 10000
+    m = 50
     d = 3072
 
     # grid_search(X, Y, X_test, y_test)
@@ -169,5 +154,12 @@ if __name__ == '__main__':
 
     h = 1e-6
 
-    train_model(X, Y, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, X_test, y_test, save=True)
+
+    W1, b1 = init_weights(size_in=d, size_out=m)
+    W1, b1 = init_weights(size_in=m, size_out=K)
+
+
+    W, b = init_weights(size_in=d, size_out=K)
+
+    train_model(X, Y, W, b, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, X_test, y_test, save=True)
     
