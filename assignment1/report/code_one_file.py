@@ -232,8 +232,8 @@ if __name__ == '__main__':
     # np.random.seed(400)
     h = 1e-6
 
-    W = np.random.normal(0, 0.1, size=(K, d))
-    b = np.random.normal(0, 0.1, size=(K, 1))
+    W = np.random.normal(0, 0.01, size=(K, d))
+    b = np.random.normal(0, 0.01, size=(K, 1))
 
     # check_gradients(X, Y, W, b, _lambda)
     # exit()
