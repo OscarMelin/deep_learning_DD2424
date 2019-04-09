@@ -15,7 +15,32 @@ def relu(s):
     return np.maximum(0, s)
 
 
-def evaluate_classifier(X, Ws, bs):
+def BatchNorm(s, mu=None, var=None):
+    n = s.shape[1]
+    if mu is None:
+        mu = np.mean(s, axis=1, keepdims=True)
+    if var is None:
+        var = np.var(s, axis=1, keepdims=False)  # False to get list for diag
+    diag = np.diag(1 / np.sqrt(var + 1e-6))
+    s_hat = np.matmul(diag, s - mu)
+    return s_hat, mu, var
+
+
+def BatchNormBackPass(G_batch, S, mu, var):
+    n = S.shape[1]
+    var = var.reshape(var.shape[0], 1)  # reshape to column vec
+    sigma_1 = 1 / np.sqrt(var + 1e-6)
+    sigma_2 = 1 / (var * np.sqrt(var) + 1e-6)
+    G_1 = np.multiply(G_batch, np.matmul(sigma_1, np.ones((1, n))))
+    G_2 = np.multiply(G_batch, np.matmul(sigma_2, np.ones((1, n))))
+    D = S - np.matmul(mu, np.ones((1, n)))
+    c = np.matmul(np.multiply(G_2, D), np.ones((n, 1)))
+    G_batch = G_1 + (1/n) * np.matmul(G_1, np.ones((n, 1))) - \
+        (1/n) * np.multiply(D, np.matmul(c, np.ones((1, n))))
+    return G_batch
+
+
+def evaluate_classifier(X, Ws, bs, gammas, betas, use_avg=False):
     """
     Ws = [(m, d), (K, m)]
     bs = [(m, 1), (K, 1)]
@@ -23,14 +48,29 @@ def evaluate_classifier(X, Ws, bs):
     p = (10, n)
     """
     n = X.shape[1]
-    n_layers = len(Ws)
 
     Hs = [np.copy(X)]
+    Ss = []
+    S_hats = []
+    mus = []
+    _vars = []
     for layer in range(n_layers - 1):
         WX = np.matmul(Ws[layer], Hs[layer])  # (m, n)
         # repeat column vector b, n times
         b_big1 = np.repeat(bs[layer], n, axis=1)
         s = WX + b_big1  # (m, n)
+        if batch_norm:
+            Ss.append(s)
+            if use_avg:
+                s_hat, mu, var = BatchNorm(
+                    s, mu=mus_avg[layer], var=_vars_avg[layer])
+            else:
+                s_hat, mu, var = BatchNorm(s)
+            S_hats.append(s_hat)
+            mus.append(mu)
+            _vars.append(var)
+            s_tilde = np.multiply(gammas[layer], s_hat) + betas[layer]
+            s = s_tilde
         h = relu(s)  # (m, n)
         Hs.append(h)
 
@@ -39,10 +79,10 @@ def evaluate_classifier(X, Ws, bs):
     b_big2 = np.repeat(bs[-1], n, axis=1)  # repeat column vector b, n times
     s = WX + b_big2
     p = softmax(s)
-    return p, Hs
+    return p, Hs, Ss, S_hats, mus, _vars
 
 
-def compute_cost(X, Y, Ws, bs, _lambda):
+def compute_cost(X, Y, Ws, bs, gammas, betas, use_avg):
     """
     Ws = [(m, d), (K, m)]
     bs = [(m, 1), (K, 1)]
@@ -50,9 +90,9 @@ def compute_cost(X, Y, Ws, bs, _lambda):
     p = (10, n)
     """
     n = X.shape[1]
-    n_layers = len(Ws)
 
-    p, _ = evaluate_classifier(X, Ws, bs)
+    p, _, _, _, _, _ = evaluate_classifier(
+        X, Ws, bs, gammas, betas, use_avg=use_avg)
     # cross entropy for one x and one one hot y column vector
     # is -log(y^T * p) which is basically value of p[true_label]
     # Therefore we need to use the diagonal of np.matmul(Y.trasnpose(), p)
@@ -73,8 +113,9 @@ def predict(p):
     return np.argmax(p, axis=0).reshape(1, p.shape[1])  # (1, n)
 
 
-def compute_accuracy(X, y, Ws, bs):
-    p, _ = evaluate_classifier(X, Ws, bs)
+def compute_accuracy(X, y, Ws, bs, gammas, betas):
+    p, _, _, _, _, _ = evaluate_classifier(
+        X, Ws, bs, gammas, betas, use_avg=True)
     predicted = predict(p)
 
     zero_one_loss = 0
@@ -86,55 +127,92 @@ def compute_accuracy(X, y, Ws, bs):
     return accuracy
 
 
-def compute_gradients(X, Y, Ws, bs, _lambda):
+def compute_gradients(X, Y, Ws, bs, gammas, betas):
     """
     X = (3072, n)
     Y = (10, n)
     P = (10, n)
     """
     n = X.shape[1]
-    n_layers = len(Ws)
 
     """ FORWARD PASS """
-    P, Hs = evaluate_classifier(X, Ws, bs)
+    P, Hs, Ss, S_hats, mus, _vars = evaluate_classifier(
+        X, Ws, bs, gammas, betas)
+
+    global mus_avg
+    global _vars_avg
+    if len(mus_avg) == 0:
+        # init
+        mus_avg = [mu for mu in mus]
+        _vars_avg = [mu for mu in _vars]
+    else:
+        # update
+        for layer in range(len(mus)):
+            mus_avg[layer] = alpha * mus_avg[layer] + (1-alpha) * mus[layer]
+            _vars_avg[layer] = alpha * \
+                _vars_avg[layer] + (1-alpha) * _vars[layer]
 
     """ BACKWARDS PASS """
     # From lec4 slides 34
     grad_Ws = []
     grad_bs = []
+    grad_gammas = []
+    grad_betas = []
 
     G_batch = -(Y - P)  # (K, n)
 
-    for layer in range(n_layers-1, 0, -1):
-        grad_W = (1/n) * np.matmul(G_batch, Hs[layer].T)  # (K, m)
-        grad_W += 2 * _lambda * Ws[layer]  # Regulation term
-        grad_b = (1/n) * np.sum(G_batch, axis=1, keepdims=True)  # (K, 1)
+    # Last layer no batch norm
+    grad_W = (1/n) * np.matmul(G_batch, Hs[-1].T)
+    grad_W += 2 * _lambda * Ws[-1]  # Regulation term
+    grad_b = (1/n) * np.sum(G_batch, axis=1, keepdims=True)
 
+    grad_Ws.append(grad_W)
+    grad_bs.append(grad_b)
+
+    G_batch = np.matmul(Ws[-1].T, G_batch)  # (m, n)
+    binary = np.zeros_like(Hs[-1])
+    binary[Hs[-1] > 0] = 1
+    G_batch = np.multiply(G_batch, binary)
+
+    for layer in range(n_layers-2, -1, -1):
+        if batch_norm:
+            grad_gamma = (1/n) * np.sum(np.multiply(G_batch,
+                                                    S_hats[layer]), axis=1, keepdims=True)
+            grad_beta = (1/n) * np.sum(G_batch, axis=1, keepdims=True)
+            grad_gammas.append(grad_gamma)
+            grad_betas.append(grad_beta)
+            # propagate throught batch norm
+            G_batch = np.multiply(G_batch, np.matmul(
+                gammas[layer], np.ones((1, n))))
+            G_batch = BatchNormBackPass(
+                G_batch, Ss[layer], mus[layer], _vars[layer])
+
+        grad_W = (1/n) * np.matmul(G_batch, Hs[layer].T)
+        grad_W += 2 * _lambda * Ws[layer]  # Regulation term
+        grad_b = (1/n) * np.sum(G_batch, axis=1, keepdims=True)
         grad_Ws.append(grad_W)
         grad_bs.append(grad_b)
 
+        # Porpagate through relu
+        if layer == 0:
+            # no need to propagate further
+            break
         G_batch = np.matmul(Ws[layer].T, G_batch)  # (m, n)
         binary = np.zeros_like(Hs[layer])
         binary[Hs[layer] > 0] = 1
         G_batch = np.multiply(G_batch, binary)
 
-    # First layer
-    grad_W = (1/n) * np.matmul(G_batch, X.T)  # (m, d)
-    grad_W += 2 * _lambda * Ws[0]  # Regulation term
-    grad_b = (1/n) * np.sum(G_batch, axis=1, keepdims=True)  # (m, 1)
-
-    grad_Ws.append(grad_W)
-    grad_bs.append(grad_b)
     grad_Ws.reverse()
     grad_bs.reverse()
+    grad_gammas.reverse()
+    grad_betas.reverse()
 
-    return grad_Ws, grad_bs
+    return grad_Ws, grad_bs, grad_gammas, grad_betas
 
 
 def compare_gradients(X, Y, Ws, bs, _lambda):
     h = 1e-5
     n_batch = 1
-    n_layers = len(Ws)
     X, Y = X[:, :n_batch], Y[:, :n_batch]
 
     grad_Ws, grad_bs = compute_gradients(X, Y, Ws, bs, _lambda)
@@ -157,25 +235,36 @@ def init_weights(size_in, size_out):
     xavier = 1/np.sqrt(size_in)
     W = np.random.normal(0, xavier, size=(size_out, size_in))
     b = np.random.normal(0, xavier, size=(size_out, 1))
-    return W, b
+    if batch_norm:
+        gamma = np.random.normal(0, xavier, size=(size_out, 1))
+        beta = np.random.normal(0, xavier, size=(size_out, 1))
+        return W, b, gamma, beta
+    return W, b, None, None
 
 
 def init_layers(layers):
-    n_layers = len(layers)
     Ws = []
     bs = []
-    W, b = init_weights(size_in=d, size_out=layers[0])
+    gammas = []
+    betas = []
+    W, b, gamma, beta = init_weights(size_in=d, size_out=layers[0])
     Ws.append(W)
     bs.append(b)
+    if batch_norm:
+        gammas.append(gamma)
+        betas.append(beta)
     for layer in range(1, n_layers):
-        W, b = init_weights(
+        W, b, gamma, beta = init_weights(
             size_in=Ws[layer-1].shape[0], size_out=layers[layer])
         Ws.append(W)
         bs.append(b)
-    return Ws, bs
+        if batch_norm:
+            gammas.append(gamma)
+            betas.append(beta)
+    return Ws, bs, gammas, betas
 
 
-def train_model(X, Y, y, Ws, bs, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, y_valid, X_test, y_test, n_cycles=-1, save=False):
+def train_model(X, Y, y, Ws, bs, gammas, betas, X_valid, Y_valid, y_valid, X_test, y_test):
     costs_train = []
     costs_valid = []
     accs_train = []
@@ -183,25 +272,30 @@ def train_model(X, Y, y, Ws, bs, _lambda, n_batch, eta, n_epochs, X_valid, Y_val
     etas = []
     grads = []
     best_acc = 0
-    n_layers = len(Ws)
+    eta = eta_min
 
     t = 0
     l = -1  # number of cycles completed
     for epoch_i in range(n_epochs):
         shuffle(X, Y)
         for X_batch, Y_batch in get_batches(n_batch, X, Y):
-            grad_Ws, grad_bs = compute_gradients(
-                X_batch, Y_batch, Ws, bs, _lambda)
+            grad_Ws, grad_bs, grad_gammas, grad_betas = compute_gradients(
+                X_batch, Y_batch, Ws, bs, gammas, betas)
 
             for layer in range(n_layers):
                 Ws[layer] = Ws[layer] - (eta * grad_Ws[layer])
                 bs[layer] = bs[layer] - (eta * grad_bs[layer])
+                if batch_norm:
+                    if layer == n_layers - 1:
+                        break  # no batch norm for last layer
+                    gammas[layer] = gammas[layer] - (eta * grad_gammas[layer])
+                    betas[layer] = betas[layer] - (eta * grad_betas[layer])
 
             if t % (2 * n_s) == 0:
                 # this is where eta = eta_min
                 l += 1
                 acc_valid = compute_accuracy(
-                    X_valid, y_valid, Ws, bs)
+                    X_valid, y_valid, Ws, bs, gammas, betas)
                 if acc_valid > best_acc:
                     best_acc = acc_valid
             lower = 2 * n_s * l
@@ -216,12 +310,14 @@ def train_model(X, Y, y, Ws, bs, _lambda, n_batch, eta, n_epochs, X_valid, Y_val
             if save:
                 etas.append(eta)
                 if t % n_saves == 0:
-                    costs_train.append(compute_cost(X, Y, Ws, bs, _lambda))
+                    costs_train.append(compute_cost(
+                        X, Y, Ws, bs, gammas, betas, use_avg=True))
                     costs_valid.append(compute_cost(
-                        X_valid, Y_valid, Ws, bs, _lambda))
-                    accs_train.append(compute_accuracy(X, y, Ws, bs))
+                        X_valid, Y_valid, Ws, bs, gammas, betas, use_avg=True))
+                    accs_train.append(compute_accuracy(
+                        X, y, Ws, bs, gammas, betas))
                     accs_valid.append(compute_accuracy(
-                        X_valid, y_valid, Ws, bs))
+                        X_valid, y_valid, Ws, bs, gammas, betas))
                     grads.append(grad_Ws)
             if l == n_cycles:
                 # Return after n_cycles
@@ -268,11 +364,11 @@ def lambda_grid_search():
 
 
 if __name__ == '__main__':
-    # X, Y, y = load_batch('data_batch_1')
-    # X_valid, Y_valid, y_valid = load_batch('data_batch_2')
-    # X_test, Y_test, y_test = load_batch('test_batch')
-    X, Y, y, X_valid, Y_valid, y_valid, X_test, Y_test, y_test = load_batch_big(
-        5000)
+    X, Y, y = load_batch('data_batch_1')
+    X_valid, Y_valid, y_valid = load_batch('data_batch_2')
+    X_test, Y_test, y_test = load_batch('test_batch')
+    # X, Y, y, X_valid, Y_valid, y_valid, X_test, Y_test, y_test = load_batch_big(
+    #     5000)
     # visulize_25(X)
 
     K = 10
@@ -285,33 +381,39 @@ if __name__ == '__main__':
 
     eta_min = 1e-5
     eta_max = 1e-1
-    eta = eta_min
+
     # stepsize rule of thumb: n_s = k * (n_tot/n_batch) for 2 < k < 8
     n_s = 5 * np.floor(n_tot / n_batch)
     n_cycles = 2
     n_saves = round(n_s / 4)
 
+    np.random.seed(500)
+    batch_norm = True
+    alpha = 0.8
     # lambda_grid_search()
     # exit()
 
     # out of layers, gotta have K at the end
-    layers = [50, 30, 20, 20, 10, 10, 10, K]
-    # layers = [50, 50, K]
+    # layers = [50, 30, 20, 20, 10, 10, 10, K]
+    layers = [50, 50, K]
     n_layers = len(layers)
 
-    Ws, bs = init_layers(layers)
+    Ws, bs, gammas, betas = init_layers(layers)
+    mus_avg = []
+    _vars_avg = []
 
     # compare_gradients(X, Y, Ws, bs, _lambda)
     # exit()
 
     save = True
-    ret = train_model(X, Y, y, Ws, bs, _lambda, n_batch, eta, n_epochs, X_valid,
-                      Y_valid, y_valid, X_test, y_test, n_cycles=n_cycles, save=save)
+    ret = train_model(X, Y, y, Ws, bs, gammas, betas, X_valid,
+                      Y_valid, y_valid, X_test, y_test)
     costs_train, costs_valid, accs_train, accs_valid, etas, grads, best_acc = ret
 
-    test_acc = compute_accuracy(X_test, y_test, Ws, bs)
+    test_acc = compute_accuracy(X_test, y_test, Ws, bs, gammas, betas)
     print("Test accuracy: $%f$ \\\\" % (test_acc))
-    print("Train accuracy: $%f$ \\\\" % (accs_train[-1]))
+    if save:
+        print("Train accuracy: $%f$ \\\\" % (accs_train[-1]))
     print("Best valid accuracy: $%f$ \\\\" % (best_acc))
 
     if save:
