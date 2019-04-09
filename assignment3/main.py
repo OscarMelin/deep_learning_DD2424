@@ -23,17 +23,23 @@ def evaluate_classifier(X, Ws, bs):
     p = (10, n)
     """
     n = X.shape[1]
-    # Layer 1
-    WX1 = np.matmul(Ws[0], X)  # (m, n)
-    b_big1 = np.repeat(bs[0], n, axis=1)  # repeat column vector b, n times
-    s = WX1 + b_big1  # (m, n)
-    h = relu(s)  # (m, n)
-    # Layer 2
-    WX2 = np.matmul(Ws[1], h)  # (K, n)
-    b_big2 = np.repeat(bs[1], n, axis=1)  # repeat column vector b, n times
-    s = WX2 + b_big2
+    n_layers = len(Ws)
+
+    Hs = [np.copy(X)]
+    for layer in range(n_layers - 1):
+        WX = np.matmul(Ws[layer], Hs[layer])  # (m, n)
+        # repeat column vector b, n times
+        b_big1 = np.repeat(bs[layer], n, axis=1)
+        s = WX + b_big1  # (m, n)
+        h = relu(s)  # (m, n)
+        Hs.append(h)
+
+    # Last Layer
+    WX = np.matmul(Ws[-1], Hs[-1])  # (K, n)
+    b_big2 = np.repeat(bs[-1], n, axis=1)  # repeat column vector b, n times
+    s = WX + b_big2
     p = softmax(s)
-    return p, h
+    return p, Hs
 
 
 def compute_cost(X, Y, Ws, bs, _lambda):
@@ -44,6 +50,8 @@ def compute_cost(X, Y, Ws, bs, _lambda):
     p = (10, n)
     """
     n = X.shape[1]
+    n_layers = len(Ws)
+
     p, _ = evaluate_classifier(X, Ws, bs)
     # cross entropy for one x and one one hot y column vector
     # is -log(y^T * p) which is basically value of p[true_label]
@@ -53,7 +61,10 @@ def compute_cost(X, Y, Ws, bs, _lambda):
     py = np.multiply(Y, p)  # (10, n)
     py = np.sum(py, axis=0).reshape(1, n)  # (1, n)
     cross_entropy = -np.log(py)  # (1, n)
-    regulation = _lambda * (np.sum(Ws[0]**2) + np.sum(Ws[1]**2))  # scalar
+
+    regulation = 0
+    for layer in range(n_layers):
+        regulation += _lambda * np.sum(Ws[layer]**2)
     J = (1/n) * np.sum(cross_entropy) + regulation  # scalar
     return J
 
@@ -81,52 +92,65 @@ def compute_gradients(X, Y, Ws, bs, _lambda):
     Y = (10, n)
     P = (10, n)
     """
+    n = X.shape[1]
+    n_layers = len(Ws)
+
     """ FORWARD PASS """
-    P, H = evaluate_classifier(X, Ws, bs)
+    P, Hs = evaluate_classifier(X, Ws, bs)
 
     """ BACKWARDS PASS """
-    # From lec4 slides
-    n = X.shape[1]
+    # From lec4 slides 34
+    grad_Ws = []
+    grad_bs = []
+
     G_batch = -(Y - P)  # (K, n)
 
-    grad_W2 = (1/n) * np.matmul(G_batch, H.T)  # (K, m)
-    grad_W2 += 2 * _lambda * Ws[1]  # Regulation term
-    grad_b2 = (1/n) * np.sum(G_batch, axis=1, keepdims=True)  # (K, 1)
+    for layer in range(n_layers-1, 0, -1):
+        grad_W = (1/n) * np.matmul(G_batch, Hs[layer].T)  # (K, m)
+        grad_W += 2 * _lambda * Ws[layer]  # Regulation term
+        grad_b = (1/n) * np.sum(G_batch, axis=1, keepdims=True)  # (K, 1)
 
-    G_batch = np.matmul(Ws[1].T, G_batch)  # (m, n)
-    binary = np.zeros_like(H)
-    binary[H > 0] = 1
-    G_batch = np.multiply(G_batch, binary)
+        grad_Ws.append(grad_W)
+        grad_bs.append(grad_b)
 
-    grad_W1 = (1/n) * np.matmul(G_batch, X.T)  # (m, d)
-    grad_W1 += 2 * _lambda * Ws[0]  # Regulation term
-    grad_b1 = (1/n) * np.sum(G_batch, axis=1, keepdims=True)  # (m, 1)
+        G_batch = np.matmul(Ws[layer].T, G_batch)  # (m, n)
+        binary = np.zeros_like(Hs[layer])
+        binary[Hs[layer] > 0] = 1
+        G_batch = np.multiply(G_batch, binary)
 
-    return [grad_W1, grad_W2], [grad_b1, grad_b2]
+    # First layer
+    grad_W = (1/n) * np.matmul(G_batch, X.T)  # (m, d)
+    grad_W += 2 * _lambda * Ws[0]  # Regulation term
+    grad_b = (1/n) * np.sum(G_batch, axis=1, keepdims=True)  # (m, 1)
+
+    grad_Ws.append(grad_W)
+    grad_bs.append(grad_b)
+    grad_Ws.reverse()
+    grad_bs.reverse()
+
+    return grad_Ws, grad_bs
 
 
 def compare_gradients(X, Y, Ws, bs, _lambda):
     h = 1e-5
     n_batch = 1
+    n_layers = len(Ws)
     X, Y = X[:, :n_batch], Y[:, :n_batch]
+
     grad_Ws, grad_bs = compute_gradients(X, Y, Ws, bs, _lambda)
 
     num_grad_Ws, num_grad_bs = compute_grads_num(
         X, Y, Ws, bs, _lambda, h, compute_cost)
 
-    comp_W1 = relative_error(grad_Ws[0], num_grad_Ws[0])
-    print("W1 relative error: ")
-    print(comp_W1)
-    comp_b1 = relative_error(grad_bs[0], num_grad_bs[0])
-    print("b1 relative error:")
-    print(comp_b1)
-
-    comp_W2 = relative_error(grad_Ws[1], num_grad_Ws[1])
-    print("W2 relative error: ")
-    print(comp_W2)
-    comp_b2 = relative_error(grad_bs[1], num_grad_bs[1])
-    print("b2 relative error:")
-    print(comp_b2)
+    for layer in range(n_layers):
+        comp_W = relative_error(
+            grad_Ws[layer], num_grad_Ws[layer])
+        print("W%d relative error: " % layer)
+        print(comp_W)
+        comp_b = relative_error(
+            grad_bs[layer], num_grad_bs[layer])
+        print("b%d relative error: " % layer)
+        print(comp_b)
 
 
 def init_weights(size_in, size_out):
@@ -134,6 +158,21 @@ def init_weights(size_in, size_out):
     W = np.random.normal(0, xavier, size=(size_out, size_in))
     b = np.random.normal(0, xavier, size=(size_out, 1))
     return W, b
+
+
+def init_layers(layers):
+    n_layers = len(layers)
+    Ws = []
+    bs = []
+    W, b = init_weights(size_in=d, size_out=layers[0])
+    Ws.append(W)
+    bs.append(b)
+    for layer in range(1, n_layers):
+        W, b = init_weights(
+            size_in=Ws[layer-1].shape[0], size_out=layers[layer])
+        Ws.append(W)
+        bs.append(b)
+    return Ws, bs
 
 
 def train_model(X, Y, y, Ws, bs, _lambda, n_batch, eta, n_epochs, X_valid, Y_valid, y_valid, X_test, y_test, n_cycles=-1, save=False):
@@ -144,8 +183,8 @@ def train_model(X, Y, y, Ws, bs, _lambda, n_batch, eta, n_epochs, X_valid, Y_val
     etas = []
     grads = []
     best_acc = 0
+    n_layers = len(Ws)
 
-    # eta = 0.01  # This is wrong to get their graphs
     t = 0
     l = -1  # number of cycles completed
     for epoch_i in range(n_epochs):
@@ -154,10 +193,9 @@ def train_model(X, Y, y, Ws, bs, _lambda, n_batch, eta, n_epochs, X_valid, Y_val
             grad_Ws, grad_bs = compute_gradients(
                 X_batch, Y_batch, Ws, bs, _lambda)
 
-            Ws[0] = Ws[0] - (eta * grad_Ws[0])
-            bs[0] = bs[0] - (eta * grad_bs[0])
-            Ws[1] = Ws[1] - (eta * grad_Ws[1])
-            bs[1] = bs[1] - (eta * grad_bs[1])
+            for layer in range(n_layers):
+                Ws[layer] = Ws[layer] - (eta * grad_Ws[layer])
+                bs[layer] = bs[layer] - (eta * grad_bs[layer])
 
             if t % (2 * n_s) == 0:
                 # this is where eta = eta_min
@@ -169,8 +207,6 @@ def train_model(X, Y, y, Ws, bs, _lambda, n_batch, eta, n_epochs, X_valid, Y_val
             lower = 2 * n_s * l
             middle = (2 * l + 1) * n_s
             upper = 2 * (l + 1) * n_s
-            # if l == 0:  # to get their graphs
-            #     pass
             if lower <= t and t <= middle:
                 eta = eta_min + (t - 2 * l * n_s) / n_s * (eta_max - eta_min)
             elif middle <= t and t <= upper:
@@ -216,8 +252,8 @@ def lambda_grid_search():
         print()
         count += 1
 
-        W1, b1 = init_weights(size_in=d, size_out=m)  # (m, d)
-        W2, b2 = init_weights(size_in=m, size_out=K)  # (K, m)
+        W1, b1 = init_weights(size_in=d, size_out=50)  # (50, d)
+        W2, b2 = init_weights(size_in=50, size_out=K)  # (K, 50)
 
         Ws = [W1, W2]
         bs = [b1, b2]
@@ -236,35 +272,34 @@ if __name__ == '__main__':
     # X_valid, Y_valid, y_valid = load_batch('data_batch_2')
     # X_test, Y_test, y_test = load_batch('test_batch')
     X, Y, y, X_valid, Y_valid, y_valid, X_test, Y_test, y_test = load_batch_big(
-        1000)
+        5000)
     # visulize_25(X)
 
     K = 10
     n_tot = X.shape[1]
-    m = 50
     d = 3072
 
-    _lambda = 4.1e-5
+    _lambda = 0.005  # 4.1e-5
     n_batch = 100
     n_epochs = 200
 
     eta_min = 1e-5
     eta_max = 1e-1
     eta = eta_min
-    # n_s = 800
     # stepsize rule of thumb: n_s = k * (n_tot/n_batch) for 2 < k < 8
-    n_s = 2 * np.floor(n_tot / n_batch)
-    n_cycles = 5
+    n_s = 5 * np.floor(n_tot / n_batch)
+    n_cycles = 2
     n_saves = round(n_s / 4)
 
     # lambda_grid_search()
     # exit()
 
-    W1, b1 = init_weights(size_in=d, size_out=m)  # (m, d)
-    W2, b2 = init_weights(size_in=m, size_out=K)  # (K, m)
+    # out of layers, gotta have K at the end
+    layers = [50, 30, 20, 20, 10, 10, 10, K]
+    # layers = [50, 50, K]
+    n_layers = len(layers)
 
-    Ws = [W1, W2]
-    bs = [b1, b2]
+    Ws, bs = init_layers(layers)
 
     # compare_gradients(X, Y, Ws, bs, _lambda)
     # exit()
@@ -284,12 +319,14 @@ if __name__ == '__main__':
         plt.plot(etas)
         plt.show()
         # gradient spread
-        fig, axes = plt.subplots(2, 1)
-        for layer in range(2):
-            data = [g[layer].reshape(
-                g[layer].shape[0] * g[layer].shape[1]) for g in grads]
+        fig, axes = plt.subplots(n_layers, 1, sharex=True, sharey=True)
+        for layer in range(n_layers):
+            data = [np.exp(g[layer].reshape(
+                g[layer].shape[0] * g[layer].shape[1])) for g in grads]
             axes[layer].boxplot(data, 0, '', showfliers=False)
             axes[layer].set_title("Distribution of layer %d" % (layer + 1))
+        plt.xlabel('update step')
+        plt.ylabel('exp grad')
         plt.show()
         # training and validation cost
         plt.plot(np.arange(len(costs_train))*n_saves,
