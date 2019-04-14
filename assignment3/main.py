@@ -203,7 +203,7 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
             # no need to propagate further
             break
         G_batch = np.matmul(Ws[layer].T, G_batch)  # (m, n)
-        binary = np.zeros_like(Hs[layer]) #np.ones_like(Hs[layer]) * 0.02
+        binary = np.ones_like(Hs[layer]) * 0.02
         binary[Hs[layer] > 0] = 1
         G_batch = np.multiply(G_batch, binary)
 
@@ -299,8 +299,7 @@ def train_model(X, Y, y, Ws, bs, gammas, betas, X_valid, Y_valid, y_valid, X_tes
         shuffle(X, Y)
         for X_batch, Y_batch in get_batches(n_batch, X, Y):
             # apply jitter
-            X_batch += np.random.normal(0, 0.01, size=X_batch.shape)
-
+            X_batch += np.random.normal(0, 0.1, size=X_batch.shape)
             grad_Ws, grad_bs, grad_gammas, grad_betas = compute_gradients(
                 X_batch, Y_batch, Ws, bs, gammas, betas)
 
