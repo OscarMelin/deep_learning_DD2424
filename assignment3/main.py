@@ -56,6 +56,7 @@ def evaluate_classifier(X, Ws, bs, gammas, betas, use_avg = False):
     Hs=[np.copy(X)]
     Ss=[]
     S_hats=[]
+    S_tildes = []
     mus=[]
     _vars=[]
     for layer in range(n_layers - 1):
@@ -63,19 +64,22 @@ def evaluate_classifier(X, Ws, bs, gammas, betas, use_avg = False):
         # repeat column vector b, n times
         b_big1=np.repeat(bs[layer], n, axis = 1)
         s=WX + b_big1  # (m, n)
+        Ss.append(s)
+        s = leakyrelu(s)
+        S_hats.append(s)
         if batch_norm:
             Ss.append(s)
             if use_avg:
-                s_hat, mu, var=BatchNorm(
+                s_tilde, mu, var=BatchNorm(
                     s, mu = mus_avg[layer], var = _vars_avg[layer])
             else:
-                s_hat, mu, var=BatchNorm(s)
-            S_hats.append(s_hat)
+                s_tilde, mu, var=BatchNorm(s)
+            S_tildes.append(s_tilde)
             mus.append(mu)
             _vars.append(var)
-            s_tilde=np.multiply(gammas[layer], s_hat) + betas[layer]
-            s=s_tilde
-        h=leakyrelu(s)  # (m, n)
+            h=np.multiply(gammas[layer], s_tilde) + betas[layer]
+        else:
+            h=s
         Hs.append(h)
 
     # Last Layer
@@ -83,7 +87,7 @@ def evaluate_classifier(X, Ws, bs, gammas, betas, use_avg = False):
     b_big2=np.repeat(bs[-1], n, axis = 1)
     s=WX + b_big2
     p=softmax(s)
-    return p, Hs, Ss, S_hats, mus, _vars
+    return p, Ss, S_hats, S_tildes, Hs, mus, _vars
 
 
 def compute_cost(X, Y, Ws, bs, gammas, betas, use_avg):
@@ -95,7 +99,7 @@ def compute_cost(X, Y, Ws, bs, gammas, betas, use_avg):
     """
     n=X.shape[1]
 
-    p, _, _, _, _, _=evaluate_classifier(
+    p, _, _, _, _, _, _=evaluate_classifier(
         X, Ws, bs, gammas, betas, use_avg=use_avg)
     # cross entropy for one x and one one hot y column vector
     # is -log(y^T * p) which is basically value of p[true_label]
@@ -118,7 +122,7 @@ def predict(p):
 
 
 def compute_accuracy(X, y, Ws, bs, gammas, betas):
-    p, _, _, _, _, _ = evaluate_classifier(
+    p, _, _, _, _, _, _ = evaluate_classifier(
         X, Ws, bs, gammas, betas, use_avg=True)
     predicted = predict(p)
 
@@ -140,7 +144,7 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
     n = X.shape[1]
 
     """ FORWARD PASS """
-    P, Hs, Ss, S_hats, mus, _vars = evaluate_classifier(
+    P, Ss, S_hats, S_tildes, Hs, mus, _vars = evaluate_classifier(
         X, Ws, bs, gammas, betas)
 
     global mus_avg
@@ -173,15 +177,19 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
     grad_Ws.append(grad_W)
     grad_bs.append(grad_b)
 
-    G_batch = np.matmul(Ws[-1].T, G_batch)  # (m, n)
-    binary = np.ones_like(Hs[-1]) * 0.02
-    binary[Hs[-1] > 0] = 1
-    G_batch = np.multiply(G_batch, binary)
+    # Propagate though Wx
+    # G_batch = np.matmul(Ws[-1].T, G_batch)  # (m, n)
+    # binary = np.ones_like(Hs[-1]) * 0.02
+    # binary[Hs[-1] > 0] = 1
+    # G_batch = np.multiply(G_batch, binary)
 
-    for layer in range(n_layers-2, -1, -1):
+    for layer in range(n_layers-2, -1, -1): # 1, 0, 
+        # Porpagate through Wx
+        G_batch = np.matmul(Ws[layer + 1].T, G_batch)  # (m, n)
+
         if batch_norm:
             grad_gamma = (1./n) * np.sum(np.multiply(G_batch,
-                                                    S_hats[layer]), axis=1, keepdims=True)
+                                                    S_tildes[layer]), axis=1, keepdims=True)
             grad_beta = (1./n) * np.sum(G_batch, axis=1, keepdims=True)
             grad_gammas.append(grad_gamma)
             grad_betas.append(grad_beta)
@@ -190,7 +198,12 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
             G_batch = np.multiply(G_batch, np.repeat(gammas[layer], n, axis=1))
             # propagate throught batch norm
             G_batch = BatchNormBackPass(
-                G_batch, Ss[layer], mus[layer], _vars[layer])
+                G_batch, S_hats[layer], mus[layer], _vars[layer])
+
+        # Propagate thtough relu
+        binary = np.ones_like(S_hats[layer]) * 0.02
+        binary[S_hats[layer] > 0] = 1
+        G_batch = np.multiply(G_batch, binary)
 
         grad_W = (1./n) * np.matmul(G_batch, Hs[layer].T)
         grad_W += 2 * _lambda * Ws[layer]  # Regulation term
@@ -198,14 +211,10 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
         grad_Ws.append(grad_W)
         grad_bs.append(grad_b)
 
-        # Porpagate through relu
-        if layer == 0:
-            # no need to propagate further
-            break
-        G_batch = np.matmul(Ws[layer].T, G_batch)  # (m, n)
-        binary = np.ones_like(Hs[layer]) * 0.02
-        binary[Hs[layer] > 0] = 1
-        G_batch = np.multiply(G_batch, binary)
+        # if layer == 0:
+        #     # no need to propagate further
+        #     break
+        
 
     grad_Ws.reverse()
     grad_bs.reverse()
@@ -299,7 +308,7 @@ def train_model(X, Y, y, Ws, bs, gammas, betas, X_valid, Y_valid, y_valid, X_tes
         shuffle(X, Y)
         for X_batch, Y_batch in get_batches(n_batch, X, Y):
             # apply jitter
-            X_batch += np.random.normal(0, 0.1, size=X_batch.shape)
+            X_batch += np.random.normal(0, 0.05, size=X_batch.shape)
             grad_Ws, grad_bs, grad_gammas, grad_betas = compute_gradients(
                 X_batch, Y_batch, Ws, bs, gammas, betas)
 
@@ -354,8 +363,8 @@ def lambda_grid_search():
     global _vars_avg
     global save
     global _lambda
-    l_min = -3.9
-    l_max = -4.1
+    l_min = -5
+    l_max = -1
     n_lambdas = 10
     lambdas = []
     for i in range(n_lambdas):
@@ -406,7 +415,7 @@ if __name__ == '__main__':
 
     # stepsize rule of thumb: n_s = k * (n_tot/n_batch) for 2 < k < 8
     n_s = 5 * np.floor(n_tot / n_batch)
-    n_cycles = 2
+    n_cycles = 3
     n_saves = round(n_s / 4)
 
     batch_norm = True
@@ -419,8 +428,8 @@ if __name__ == '__main__':
     layers = [50, 50, K]
     n_layers = len(layers)
 
-    # lambda_grid_search()
-    # exit()
+    lambda_grid_search()
+    exit()
 
     Ws, bs, gammas, betas = init_layers(layers)
     mus_avg = []
