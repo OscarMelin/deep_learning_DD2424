@@ -21,14 +21,14 @@ def BatchNorm(s, mu=None, var=None):
         mu = np.mean(s, axis=1, keepdims=True)
     if var is None:
         var = np.var(s, axis=1, keepdims=False)  # False to get list for diag
-    diag = np.diag(1 / (np.sqrt(var + 1e-6)))
+    diag = np.diag(1 / (np.sqrt(var)))
     s_hat = np.matmul(diag, s - mu)
     return s_hat, mu, var
 
 
 def BatchNormBackPass(G_batch, S, mu, var):
     n=S.shape[1]
-    sigma_1 = 1 / np.sqrt(np.mean((S-mu)**2, axis=1, keepdims=True))
+    sigma_1 = 1. / np.sqrt(np.mean((S-mu)**2, axis=1, keepdims=True))
     sigma_2 = sigma_1 ** 3
     G_1=np.multiply(G_batch, np.repeat(sigma_1, n, axis=1))
     G_2=np.multiply(G_batch, np.repeat(sigma_2, n, axis=1))
@@ -178,9 +178,9 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
 
     for layer in range(n_layers-2, -1, -1):
         if batch_norm:
-            grad_gamma = (1/n) * np.sum(np.multiply(G_batch,
+            grad_gamma = (1./n) * np.sum(np.multiply(G_batch,
                                                     S_hats[layer]), axis=1, keepdims=True)
-            grad_beta = (1/n) * np.sum(G_batch, axis=1, keepdims=True)
+            grad_beta = (1./n) * np.sum(G_batch, axis=1, keepdims=True)
             grad_gammas.append(grad_gamma)
             grad_betas.append(grad_beta)
             
@@ -190,9 +190,9 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
             G_batch = BatchNormBackPass(
                 G_batch, Ss[layer], mus[layer], _vars[layer])
 
-        grad_W = (1/n) * np.matmul(G_batch, Hs[layer].T)
+        grad_W = (1./n) * np.matmul(G_batch, Hs[layer].T)
         grad_W += 2 * _lambda * Ws[layer]  # Regulation term
-        grad_b = (1/n) * np.sum(G_batch, axis=1, keepdims=True)
+        grad_b = (1./n) * np.sum(G_batch, axis=1, keepdims=True)
         grad_Ws.append(grad_W)
         grad_bs.append(grad_b)
 
@@ -215,7 +215,7 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
 
 def compare_gradients(X, Y, Ws, bs, gammas, betas):
     h = 1e-5
-    n_batch = 10  # has to be > 1 for batch norm > 2 for it to work
+    n_batch = 100  # has to be > 1 for batch norm > 2 for it to work
     X, Y = X[:d, :n_batch], Y[:, :n_batch]
 
     grad_Ws, grad_bs, grad_gammas, grad_betas = compute_gradients(
@@ -349,8 +349,9 @@ def lambda_grid_search():
     global mus_avg
     global _vars_avg
     global save
-    l_min = -5
-    l_max = -1
+    global _lambda
+    l_min = -3.9
+    l_max = -4.1
     n_lambdas = 10
     lambdas = []
     for i in range(n_lambdas):
@@ -364,6 +365,7 @@ def lambda_grid_search():
         print()
         print("\t--- STARTING NEW---\t%d" % count)
         print()
+        _lambda = l
         count += 1
 
         Ws, bs, gammas, betas = init_layers(layers)
@@ -372,9 +374,9 @@ def lambda_grid_search():
 
         save = False
         ret = train_model(X, Y, y, Ws, bs, gammas, betas, X_valid,
-                      Y_valid, y_valid, X_test, y_test)
+                    Y_valid, y_valid, X_test, y_test)
         _, _, _, best_valid_acc, best_valid_acc = ret
-        f.write('Lambda: %f    best accuracy: %f\n\n' % (l, best_acc))
+        f.write('Lambda: %f    best accuracy: %f\n\n' % (l, best_valid_acc))
 
     f.close()
 
@@ -391,7 +393,7 @@ if __name__ == '__main__':
     n_tot = X.shape[1]
     d = 3072
 
-    _lambda = 0.005
+    _lambda = 0.005 #0.000715
     n_batch = 100
     n_epochs = 200
 
@@ -404,12 +406,12 @@ if __name__ == '__main__':
     n_saves = round(n_s / 4)
 
     batch_norm = True
-    alpha = 0.7
+    alpha = 0.9
 
     save = True
 
     # out of layers, gotta have K at the end
-    # layers = [50, 30, 20, 20, 10, 10, 10, K]
+    # layers = [50, 30, 20, 20, 10, 10, 10, 10, K]
     layers = [50, 50, K]
     n_layers = len(layers)
 
