@@ -84,75 +84,182 @@ def get_batches(n_batch, X, Y):
         yield X_batch, Y_batch
 
 
-def compute_grads_num_slow(X, Y, W, b, _lambda, h, compute_cost):
-    no = W.shape[0]
-    d = X.shape[0]
-
-    grad_W = np.zeros_like(W)
-    grad_b = np.zeros((no, 1))
-
-    for i in range(b.shape[0]):
-        b_try = np.copy(b)
-        b_try[i] = b_try[i] - h
-        c1 = compute_cost(X, Y, W, b_try, _lambda)
-        b_try = np.copy(b)
-        b_try[i] = b_try[i] + h
-        c2 = compute_cost(X, Y, W, b_try, _lambda)
-        grad_b[i] = (c2-c1) / (2*h)
-
-    for i in range(W.shape[0]):
-        for j in range(W.shape[1]):
-            W_try = np.copy(W)
-            W_try[i][j] = W_try[i][j] - h
-            c1 = compute_cost(X, Y, W_try, b, _lambda)
-            W_try = np.copy(W)
-            W_try[i][j] = W_try[i][j] + h
-            c2 = compute_cost(X, Y, W_try, b, _lambda)
-            grad_W[i][j] = (c2-c1) / (2*h)
-
-    return grad_W, grad_b
-
-
-def compute_grads_num(X, Y, Ws, bs, _lambda, h, compute_cost):
+def compute_grads_num_slow(X, Y, Ws, bs, gammas, betas, h, compute_cost, batch_norm):
     no = Ws[1].shape[0]
     d = X.shape[0]
+    n_layers = len(Ws)
 
     grad_Ws = []
     grad_bs = []
+    grad_gammas = []
+    grad_betas = []
 
-    c = compute_cost(X, Y, Ws, bs, _lambda)
-
-    for layer in range(len(Ws)):
+    for layer in range(n_layers):
         grad_W = np.zeros_like(Ws[layer])
         grad_b = np.zeros_like(bs[layer])
+        if batch_norm and layer != n_layers - 1:
+            grad_gamma = np.zeros_like(gammas[layer])
+            grad_beta = np.zeros_like(betas[layer])
+
+        print("Starting with b for Layer %d" % layer)
+        for i in range(bs[layer].shape[0]):
+            # back
+            b_try = np.copy(bs[layer])
+            b_try[i] = b_try[i] - h
+            temp = bs[layer]
+            bs[layer] = b_try
+            c1 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+            bs[layer] = temp
+            # forw
+            b_try = np.copy(bs[layer])
+            b_try[i] = b_try[i] + h
+            temp = bs[layer]
+            bs[layer] = b_try
+            c2 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+            bs[layer] = temp
+            grad_b[i] = (c2-c1) / (2*h)
+
+        print("Starting with W for Layer %d" % layer)
+        for i in range(Ws[layer].shape[0]):
+            for j in range(Ws[layer].shape[1]):
+                # back
+                W_try = np.copy(Ws[layer])
+                W_try[i][j] = W_try[i][j] - h
+                temp = Ws[layer]
+                Ws[layer] = W_try
+                c1 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+                Ws[layer] = temp
+                # forw
+                W_try = np.copy(Ws[layer])
+                W_try[i][j] = W_try[i][j] + h
+                temp = Ws[layer]
+                Ws[layer] = W_try
+                c2 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+                Ws[layer] = temp
+                grad_W[i][j] = (c2-c1) / (2*h)
+
+        grad_Ws.append(grad_W)
+        grad_bs.append(grad_b)
+        print("Done with W and bs for layer %d" % layer)
+
+        if batch_norm and layer != n_layers - 1:  # no batch norm last layer
+            print("Starting with gamma for Layer %d" % layer)
+            for i in range(gammas[layer].shape[0]):
+                # back
+                gammas_try = np.copy(gammas[layer])
+                gammas_try[i] = gammas_try[i] - h
+                temp = gammas[layer]
+                gammas[layer] = gammas_try
+                c1 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+                gammas[layer] = temp
+                # forw
+                gammas_try = np.copy(gammas[layer])
+                gammas_try[i] = gammas_try[i] + h
+                temp = gammas[layer]
+                gammas[layer] = gammas_try
+                c2 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+                gammas[layer] = temp
+                grad_gamma[i] = (c2-c1) / (2*h)
+
+            print("Starting with beta for Layer %d" % layer)
+            for i in range(betas[layer].shape[0]):
+                # back
+                beta_try = np.copy(betas[layer])
+                beta_try[i] = beta_try[i] - h
+                temp = betas[layer]
+                betas[layer] = beta_try
+                c1 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+                betas[layer] = temp
+                # forw
+                beta_try = np.copy(betas[layer])
+                beta_try[i] = beta_try[i] + h
+                temp = betas[layer]
+                betas[layer] = beta_try
+                c2 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+                betas[layer] = temp
+                grad_beta[i] = (c2-c1) / (2*h)
+
+            grad_gammas.append(grad_gamma)
+            grad_betas.append(grad_beta)
+            print("Done with gamma and beta for Layer %d" % layer)
+
+    return grad_Ws, grad_bs, grad_gammas, grad_betas
+
+
+def compute_grads_num(X, Y, Ws, bs, gammas, betas, h, compute_cost, batch_norm):
+    no = Ws[1].shape[0]
+    d = X.shape[0]
+    n_layers = len(Ws)
+
+    grad_Ws = []
+    grad_bs = []
+    grad_gammas = []
+    grad_betas = []
+
+    c = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+
+    for layer in range(n_layers):
+        grad_W = np.zeros_like(Ws[layer])
+        grad_b = np.zeros_like(bs[layer])
+        if batch_norm and layer != n_layers - 1:
+            grad_gamma = np.zeros_like(gammas[layer])
+            grad_beta = np.zeros_like(betas[layer])
+
+        print("Starting with b for Layer %d" % layer)
         for i in range(bs[layer].shape[0]):
             b_try = np.copy(bs[layer])
             b_try[i] = b_try[i] + h
             temp = bs[layer]
             bs[layer] = b_try
-            c2 = compute_cost(X, Y, Ws, bs, _lambda)
+            c2 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
             bs[layer] = temp
             grad_b[i] = (c2-c) / h
-        print("Done with b")
 
+        print("Starting with W for Layer %d" % layer)
         for i in range(Ws[layer].shape[0]):
             for j in range(Ws[layer].shape[1]):
                 W_try = np.copy(Ws[layer])
                 W_try[i][j] = W_try[i][j] + h
                 temp = Ws[layer]
                 Ws[layer] = W_try
-                c2 = compute_cost(X, Y, Ws, bs, _lambda)
+                c2 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
                 Ws[layer] = temp
                 grad_W[i][j] = (c2-c) / h
-        print("Done with W")
+
         grad_Ws.append(grad_W)
         grad_bs.append(grad_b)
-        print("Done with one layer")
+        print("Done with W and bs for layer %d" % layer)
 
-    return grad_Ws, grad_bs
+        if batch_norm and layer != n_layers - 1:  # no batch norm last layer
+            print("Starting with gamma for Layer %d" % layer)
+            for i in range(gammas[layer].shape[0]):
+                gammas_try = np.copy(gammas[layer])
+                gammas_try[i] = gammas_try[i] + h
+                temp = gammas[layer]
+                gammas[layer] = gammas_try
+                c2 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+                gammas[layer] = temp
+                grad_gamma[i] = (c2-c) / h
+
+            print("Starting with beta for Layer %d" % layer)
+            for i in range(betas[layer].shape[0]):
+                beta_try = np.copy(betas[layer])
+                beta_try[i] = beta_try[i] + h
+                temp = betas[layer]
+                betas[layer] = beta_try
+                c2 = compute_cost(X, Y, Ws, bs, gammas, betas, False)
+                betas[layer] = temp
+                grad_beta[i] = (c2-c) / h
+
+            grad_gammas.append(grad_gamma)
+            grad_betas.append(grad_beta)
+            print("Done with gamma and beta for Layer %d" % layer)
+
+    return grad_Ws, grad_bs, grad_gammas, grad_betas
 
 
 def relative_error(grad, num_grad):
+    assert grad.shape == num_grad.shape
     nominator = np.sum(np.abs(grad - num_grad))
     demonimator = max(1e-6, np.sum(np.abs(grad)) + np.sum(np.abs(num_grad)))
     return nominator / demonimator
@@ -173,8 +280,10 @@ def visulize_25(X):
     for j in range(5):
         for k in range(5):
             i = np.random.choice(range(len(X)))
+            im = X[:, i].reshape(32, 32, 3)
+            im = (im - np.min(im)) / (np.max(im) - np.min(im))
             axes1[j][k].set_axis_off()
-            axes1[j][k].imshow(X[:, i].reshape(32, 32, 3))
+            axes1[j][k].imshow(im)
     plt.show()
 
 
