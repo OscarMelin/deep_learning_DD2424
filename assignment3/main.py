@@ -298,6 +298,9 @@ def train_model(X, Y, y, Ws, bs, gammas, betas, X_valid, Y_valid, y_valid, X_tes
     for epoch_i in range(n_epochs):
         shuffle(X, Y)
         for X_batch, Y_batch in get_batches(n_batch, X, Y):
+            # apply jitter
+            X_batch += np.random.normal(0, 0.01, size=X_batch.shape)
+
             grad_Ws, grad_bs, grad_gammas, grad_betas = compute_gradients(
                 X_batch, Y_batch, Ws, bs, gammas, betas)
 
