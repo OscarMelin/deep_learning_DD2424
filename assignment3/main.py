@@ -14,6 +14,8 @@ def softmax(s):
 def relu(s):
     return np.maximum(0, s)
 
+def leakyrelu(s):
+    return np.maximum(0.02*s, s)
 
 def BatchNorm(s, mu=None, var=None):
     n = s.shape[1]
@@ -73,7 +75,7 @@ def evaluate_classifier(X, Ws, bs, gammas, betas, use_avg = False):
             _vars.append(var)
             s_tilde=np.multiply(gammas[layer], s_hat) + betas[layer]
             s=s_tilde
-        h=relu(s)  # (m, n)
+        h=leakyrelu(s)  # (m, n)
         Hs.append(h)
 
     # Last Layer
@@ -172,7 +174,7 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
     grad_bs.append(grad_b)
 
     G_batch = np.matmul(Ws[-1].T, G_batch)  # (m, n)
-    binary = np.zeros_like(Hs[-1])
+    binary = np.ones_like(Hs[-1]) * 0.02
     binary[Hs[-1] > 0] = 1
     G_batch = np.multiply(G_batch, binary)
 
@@ -201,7 +203,7 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
             # no need to propagate further
             break
         G_batch = np.matmul(Ws[layer].T, G_batch)  # (m, n)
-        binary = np.zeros_like(Hs[layer])
+        binary = np.zeros_like(Hs[layer]) #np.ones_like(Hs[layer]) * 0.02
         binary[Hs[layer] > 0] = 1
         G_batch = np.multiply(G_batch, binary)
 
@@ -386,7 +388,7 @@ if __name__ == '__main__':
     # X_valid, Y_valid, y_valid = load_batch('data_batch_2')
     # X_test, Y_test, y_test = load_batch('test_batch')
     X, Y, y, X_valid, Y_valid, y_valid, X_test, Y_test, y_test = load_batch_big(
-        5000)
+        1000)
     # visulize_25(X)
 
     K = 10
