@@ -1,6 +1,6 @@
 import numpy as np
 from helpers import *
-
+from math import log
 
 def softmax(s):
     """Compute softmax values for each sets of scores in s"""
@@ -177,12 +177,6 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
     grad_Ws.append(grad_W)
     grad_bs.append(grad_b)
 
-    # Propagate though Wx
-    # G_batch = np.matmul(Ws[-1].T, G_batch)  # (m, n)
-    # binary = np.ones_like(Hs[-1]) * 0.02
-    # binary[Hs[-1] > 0] = 1
-    # G_batch = np.multiply(G_batch, binary)
-
     for layer in range(n_layers-2, -1, -1): # 1, 0, 
         # Porpagate through Wx
         G_batch = np.matmul(Ws[layer + 1].T, G_batch)  # (m, n)
@@ -210,11 +204,6 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
         grad_b = (1./n) * np.sum(G_batch, axis=1, keepdims=True)
         grad_Ws.append(grad_W)
         grad_bs.append(grad_b)
-
-        # if layer == 0:
-        #     # no need to propagate further
-        #     break
-        
 
     grad_Ws.reverse()
     grad_bs.reverse()
@@ -363,35 +352,69 @@ def lambda_grid_search():
     global _vars_avg
     global save
     global _lambda
-    l_min = -5
-    l_max = -1
-    n_lambdas = 10
-    lambdas = []
-    for i in range(n_lambdas):
-        l = l_min + (l_max - l_min) * np.random.rand()
-        lambdas.append(10 ** l)
-    print(lambdas)
+    best_acc = 0
+    best_l = 0
 
-    f = open('grid_sreach.txt', 'w+')
-    count = 0
-    for l in lambdas:
-        print()
-        print("\t--- STARTING NEW---\t%d" % count)
-        print()
-        _lambda = l
-        count += 1
+    for i in range(3):
+        if i == 0:
+            l_min = -6
+            l_max = -1
+            n_lambdas = 20
+            lambdas = []
+            for i in range(n_lambdas):
+                l = l_min + (l_max - l_min) * np.random.rand()
+                lambdas.append(10 ** l)
 
-        Ws, bs, gammas, betas = init_layers(layers)
-        mus_avg = []
-        _vars_avg = []
+            f = open('grid_sreach_coarse.txt', 'w+')
+            print("FIRST COARSE SEARCH")
+        elif i == 1:
+            prev = log(best_l, 10)
+            l_min = prev - 1
+            l_max = prev + 1
+            n_lambdas = 15
+            lambdas = []
+            for i in range(n_lambdas):
+                l = l_min + (l_max - l_min) * np.random.rand()
+                lambdas.append(10 ** l)
 
-        save = False
-        ret = train_model(X, Y, y, Ws, bs, gammas, betas, X_valid,
-                    Y_valid, y_valid, X_test, y_test)
-        _, _, _, best_valid_acc, best_valid_acc = ret
-        f.write('Lambda: %f    best accuracy: %f\n\n' % (l, best_valid_acc))
+            f = open('grid_sreach_finer.txt', 'w+')
+            print("SECOND FINER SEARCH")
+        elif i == 2:
+            prev = log(best_l, 10)
+            l_min = prev - 0.01
+            l_max = (prev + 1) - 0.99
+            n_lambdas = 10
+            lambdas = []
+            for i in range(n_lambdas):
+                l = l_min + (l_max - l_min) * np.random.rand()
+                lambdas.append(10 ** l)
 
-    f.close()
+            f = open('grid_sreach_finest.txt', 'w+')
+            print("LAST FINEST SEARCH")
+
+        count = 0
+        for l in lambdas:
+            print()
+            print("\t--- STARTING NEW---\t%d" % count)
+            print()
+            _lambda = l
+            count += 1
+
+            Ws, bs, gammas, betas = init_layers(layers)
+            mus_avg = []
+            _vars_avg = []
+
+            save = False
+            ret = train_model(X, Y, y, Ws, bs, gammas, betas, X_valid,
+                        Y_valid, y_valid, X_test, y_test)
+            _, _, _, _, best_test_acc = ret
+            f.write('Lambda: %f    best accuracy: %f\n\n' % (l, best_test_acc))
+            if best_test_acc > best_acc:
+                best_acc = best_test_acc
+                best_l = l
+        f.write('TOTAL BEST lambda: %f   WITH accuracy: %f\n\n' % (best_l, best_acc))
+        f.close()
+
 
 
 if __name__ == '__main__':
@@ -406,7 +429,7 @@ if __name__ == '__main__':
     n_tot = X.shape[1]
     d = 3072
 
-    _lambda = 0.005 #0.000715
+    _lambda = 0.003149 #0.005 #0.000715
     n_batch = 100
     n_epochs = 200
 
@@ -415,7 +438,7 @@ if __name__ == '__main__':
 
     # stepsize rule of thumb: n_s = k * (n_tot/n_batch) for 2 < k < 8
     n_s = 5 * np.floor(n_tot / n_batch)
-    n_cycles = 3
+    n_cycles = 2
     n_saves = round(n_s / 4)
 
     batch_norm = True
@@ -428,8 +451,8 @@ if __name__ == '__main__':
     layers = [50, 50, K]
     n_layers = len(layers)
 
-    lambda_grid_search()
-    exit()
+    # lambda_grid_search()
+    # exit()
 
     Ws, bs, gammas, betas = init_layers(layers)
     mus_avg = []

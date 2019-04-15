@@ -302,6 +302,8 @@ def visulize_weights(W, title):
     fig.suptitle(title)
     plt.show()
 
+from math import log
+
 def softmax(s):
     """Compute softmax values for each sets of scores in s"""
     exps = np.exp(s)  # (K, n_batch)
@@ -314,6 +316,8 @@ def softmax(s):
 def relu(s):
     return np.maximum(0, s)
 
+def leakyrelu(s):
+    return np.maximum(0.02*s, s)
 
 def BatchNorm(s, mu=None, var=None):
     n = s.shape[1]
@@ -354,6 +358,7 @@ def evaluate_classifier(X, Ws, bs, gammas, betas, use_avg = False):
     Hs=[np.copy(X)]
     Ss=[]
     S_hats=[]
+    S_tildes = []
     mus=[]
     _vars=[]
     for layer in range(n_layers - 1):
@@ -361,19 +366,22 @@ def evaluate_classifier(X, Ws, bs, gammas, betas, use_avg = False):
         # repeat column vector b, n times
         b_big1=np.repeat(bs[layer], n, axis = 1)
         s=WX + b_big1  # (m, n)
+        Ss.append(s)
+        s = leakyrelu(s)
+        S_hats.append(s)
         if batch_norm:
             Ss.append(s)
             if use_avg:
-                s_hat, mu, var=BatchNorm(
+                s_tilde, mu, var=BatchNorm(
                     s, mu = mus_avg[layer], var = _vars_avg[layer])
             else:
-                s_hat, mu, var=BatchNorm(s)
-            S_hats.append(s_hat)
+                s_tilde, mu, var=BatchNorm(s)
+            S_tildes.append(s_tilde)
             mus.append(mu)
             _vars.append(var)
-            s_tilde=np.multiply(gammas[layer], s_hat) + betas[layer]
-            s=s_tilde
-        h=relu(s)  # (m, n)
+            h=np.multiply(gammas[layer], s_tilde) + betas[layer]
+        else:
+            h=s
         Hs.append(h)
 
     # Last Layer
@@ -381,7 +389,7 @@ def evaluate_classifier(X, Ws, bs, gammas, betas, use_avg = False):
     b_big2=np.repeat(bs[-1], n, axis = 1)
     s=WX + b_big2
     p=softmax(s)
-    return p, Hs, Ss, S_hats, mus, _vars
+    return p, Ss, S_hats, S_tildes, Hs, mus, _vars
 
 
 def compute_cost(X, Y, Ws, bs, gammas, betas, use_avg):
@@ -393,7 +401,7 @@ def compute_cost(X, Y, Ws, bs, gammas, betas, use_avg):
     """
     n=X.shape[1]
 
-    p, _, _, _, _, _=evaluate_classifier(
+    p, _, _, _, _, _, _=evaluate_classifier(
         X, Ws, bs, gammas, betas, use_avg=use_avg)
     # cross entropy for one x and one one hot y column vector
     # is -log(y^T * p) which is basically value of p[true_label]
@@ -416,7 +424,7 @@ def predict(p):
 
 
 def compute_accuracy(X, y, Ws, bs, gammas, betas):
-    p, _, _, _, _, _ = evaluate_classifier(
+    p, _, _, _, _, _, _ = evaluate_classifier(
         X, Ws, bs, gammas, betas, use_avg=True)
     predicted = predict(p)
 
@@ -438,7 +446,7 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
     n = X.shape[1]
 
     """ FORWARD PASS """
-    P, Hs, Ss, S_hats, mus, _vars = evaluate_classifier(
+    P, Ss, S_hats, S_tildes, Hs, mus, _vars = evaluate_classifier(
         X, Ws, bs, gammas, betas)
 
     global mus_avg
@@ -471,15 +479,13 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
     grad_Ws.append(grad_W)
     grad_bs.append(grad_b)
 
-    G_batch = np.matmul(Ws[-1].T, G_batch)  # (m, n)
-    binary = np.zeros_like(Hs[-1])
-    binary[Hs[-1] > 0] = 1
-    G_batch = np.multiply(G_batch, binary)
+    for layer in range(n_layers-2, -1, -1): # 1, 0, 
+        # Porpagate through Wx
+        G_batch = np.matmul(Ws[layer + 1].T, G_batch)  # (m, n)
 
-    for layer in range(n_layers-2, -1, -1):
         if batch_norm:
             grad_gamma = (1./n) * np.sum(np.multiply(G_batch,
-                                                    S_hats[layer]), axis=1, keepdims=True)
+                                                    S_tildes[layer]), axis=1, keepdims=True)
             grad_beta = (1./n) * np.sum(G_batch, axis=1, keepdims=True)
             grad_gammas.append(grad_gamma)
             grad_betas.append(grad_beta)
@@ -488,22 +494,18 @@ def compute_gradients(X, Y, Ws, bs, gammas, betas):
             G_batch = np.multiply(G_batch, np.repeat(gammas[layer], n, axis=1))
             # propagate throught batch norm
             G_batch = BatchNormBackPass(
-                G_batch, Ss[layer], mus[layer], _vars[layer])
+                G_batch, S_hats[layer], mus[layer], _vars[layer])
+
+        # Propagate thtough relu
+        binary = np.ones_like(S_hats[layer]) * 0.02
+        binary[S_hats[layer] > 0] = 1
+        G_batch = np.multiply(G_batch, binary)
 
         grad_W = (1./n) * np.matmul(G_batch, Hs[layer].T)
         grad_W += 2 * _lambda * Ws[layer]  # Regulation term
         grad_b = (1./n) * np.sum(G_batch, axis=1, keepdims=True)
         grad_Ws.append(grad_W)
         grad_bs.append(grad_b)
-
-        # Porpagate through relu
-        if layer == 0:
-            # no need to propagate further
-            break
-        G_batch = np.matmul(Ws[layer].T, G_batch)  # (m, n)
-        binary = np.zeros_like(Hs[layer])
-        binary[Hs[layer] > 0] = 1
-        G_batch = np.multiply(G_batch, binary)
 
     grad_Ws.reverse()
     grad_bs.reverse()
@@ -596,6 +598,8 @@ def train_model(X, Y, y, Ws, bs, gammas, betas, X_valid, Y_valid, y_valid, X_tes
     for epoch_i in range(n_epochs):
         shuffle(X, Y)
         for X_batch, Y_batch in get_batches(n_batch, X, Y):
+            # apply jitter
+            X_batch += np.random.normal(0, 0.05, size=X_batch.shape)
             grad_Ws, grad_bs, grad_gammas, grad_betas = compute_gradients(
                 X_batch, Y_batch, Ws, bs, gammas, betas)
 
@@ -650,35 +654,69 @@ def lambda_grid_search():
     global _vars_avg
     global save
     global _lambda
-    l_min = -3.9
-    l_max = -4.1
-    n_lambdas = 10
-    lambdas = []
-    for i in range(n_lambdas):
-        l = l_min + (l_max - l_min) * np.random.rand()
-        lambdas.append(10 ** l)
-    print(lambdas)
+    best_acc = 0
+    best_l = 0
 
-    f = open('grid_sreach.txt', 'w+')
-    count = 0
-    for l in lambdas:
-        print()
-        print("\t--- STARTING NEW---\t%d" % count)
-        print()
-        _lambda = l
-        count += 1
+    for i in range(3):
+        if i == 0:
+            l_min = -6
+            l_max = -1
+            n_lambdas = 20
+            lambdas = []
+            for i in range(n_lambdas):
+                l = l_min + (l_max - l_min) * np.random.rand()
+                lambdas.append(10 ** l)
 
-        Ws, bs, gammas, betas = init_layers(layers)
-        mus_avg = []
-        _vars_avg = []
+            f = open('grid_sreach_coarse.txt', 'w+')
+            print("FIRST COARSE SEARCH")
+        elif i == 1:
+            prev = log(best_l, 10)
+            l_min = prev - 1
+            l_max = prev + 1
+            n_lambdas = 15
+            lambdas = []
+            for i in range(n_lambdas):
+                l = l_min + (l_max - l_min) * np.random.rand()
+                lambdas.append(10 ** l)
 
-        save = False
-        ret = train_model(X, Y, y, Ws, bs, gammas, betas, X_valid,
-                    Y_valid, y_valid, X_test, y_test)
-        _, _, _, best_valid_acc, best_valid_acc = ret
-        f.write('Lambda: %f    best accuracy: %f\n\n' % (l, best_valid_acc))
+            f = open('grid_sreach_finer.txt', 'w+')
+            print("SECOND FINER SEARCH")
+        elif i == 2:
+            prev = log(best_l, 10)
+            l_min = prev - 0.01
+            l_max = (prev + 1) - 0.99
+            n_lambdas = 10
+            lambdas = []
+            for i in range(n_lambdas):
+                l = l_min + (l_max - l_min) * np.random.rand()
+                lambdas.append(10 ** l)
 
-    f.close()
+            f = open('grid_sreach_finest.txt', 'w+')
+            print("LAST FINEST SEARCH")
+
+        count = 0
+        for l in lambdas:
+            print()
+            print("\t--- STARTING NEW---\t%d" % count)
+            print()
+            _lambda = l
+            count += 1
+
+            Ws, bs, gammas, betas = init_layers(layers)
+            mus_avg = []
+            _vars_avg = []
+
+            save = False
+            ret = train_model(X, Y, y, Ws, bs, gammas, betas, X_valid,
+                        Y_valid, y_valid, X_test, y_test)
+            _, _, _, _, best_test_acc = ret
+            f.write('Lambda: %f    best accuracy: %f\n\n' % (l, best_test_acc))
+            if best_test_acc > best_acc:
+                best_acc = best_test_acc
+                best_l = l
+        f.write('TOTAL BEST lambda: %f   WITH accuracy: %f\n\n' % (best_l, best_acc))
+        f.close()
+
 
 
 if __name__ == '__main__':
@@ -686,14 +724,14 @@ if __name__ == '__main__':
     # X_valid, Y_valid, y_valid = load_batch('data_batch_2')
     # X_test, Y_test, y_test = load_batch('test_batch')
     X, Y, y, X_valid, Y_valid, y_valid, X_test, Y_test, y_test = load_batch_big(
-        5000)
+        1000)
     # visulize_25(X)
 
     K = 10
     n_tot = X.shape[1]
     d = 3072
 
-    _lambda = 0.005 #0.000715
+    _lambda = 0.003149 #0.005 #0.000715
     n_batch = 100
     n_epochs = 200
 

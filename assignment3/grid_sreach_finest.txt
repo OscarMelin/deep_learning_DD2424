@@ -1,0 +1,22 @@
+Lambda: 0.003087    best accuracy: 0.485100
+
+Lambda: 0.003207    best accuracy: 0.480900
+
+Lambda: 0.003105    best accuracy: 0.477700
+
+Lambda: 0.003118    best accuracy: 0.485900
+
+Lambda: 0.003184    best accuracy: 0.483700
+
+Lambda: 0.003156    best accuracy: 0.487900
+
+Lambda: 0.003186    best accuracy: 0.479500
+
+Lambda: 0.003083    best accuracy: 0.474900
+
+Lambda: 0.003190    best accuracy: 0.479100
+
+Lambda: 0.003100    best accuracy: 0.478400
+
+TOTAL BEST lambda: 0.003149   WITH accuracy: 0.510900
+

@@ -1,0 +1,42 @@
+Lambda: 0.003149    best accuracy: 0.510900
+
+Lambda: 0.000002    best accuracy: 0.499700
+
+Lambda: 0.000002    best accuracy: 0.496800
+
+Lambda: 0.048688    best accuracy: 0.486300
+
+Lambda: 0.000026    best accuracy: 0.494800
+
+Lambda: 0.019615    best accuracy: 0.509400
+
+Lambda: 0.000639    best accuracy: 0.492600
+
+Lambda: 0.021232    best accuracy: 0.503100
+
+Lambda: 0.000005    best accuracy: 0.499500
+
+Lambda: 0.006880    best accuracy: 0.506900
+
+Lambda: 0.075843    best accuracy: 0.463500
+
+Lambda: 0.006945    best accuracy: 0.505800
+
+Lambda: 0.003951    best accuracy: 0.498900
+
+Lambda: 0.000073    best accuracy: 0.488700
+
+Lambda: 0.001795    best accuracy: 0.497300
+
+Lambda: 0.001221    best accuracy: 0.484200
+
+Lambda: 0.006535    best accuracy: 0.494700
+
+Lambda: 0.000049    best accuracy: 0.483000
+
+Lambda: 0.010902    best accuracy: 0.505900
+
+Lambda: 0.000011    best accuracy: 0.484900
+
+TOTAL BEST lambda: 0.003149   WITH accuracy: 0.510900
+
