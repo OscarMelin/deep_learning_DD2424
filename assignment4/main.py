@@ -2,6 +2,8 @@ from helpers import *
 from RNN import RNN
 import numpy as np
 import matplotlib.pyplot as plt
+import datetime
+import time
 
 
 def synthesize(X_seq):
@@ -14,25 +16,15 @@ def synthesize(X_seq):
 
 
 def compare_gradients():
-    X_chars, Y_chars = get_batch()
-    num_grads = numerical_gradients(RNN, X_chars, Y_chars, h)
-    RNN.train(X_chars, Y_chars)
-    V_error = relative_error(RNN.grad_V, num_grads['V'])
-    print("\nV error:")
-    print(V_error)
-    W_error = relative_error(RNN.grad_W, num_grads['W'])
-    print("\nW error:")
-    print(W_error)
-    U_error = relative_error(RNN.grad_U, num_grads['U'])
-    print("\nU error:")
-    print(U_error)
-    b_error = relative_error(RNN.grad_b, num_grads['b'])
-    print("\nb error:")
-    print(b_error)
-    c_error = relative_error(RNN.grad_c, num_grads['c'])
-    print("\nc error:")
-    print(c_error)
-    exit()
+    tRNN = RNN(K, m, eta, seq_length, init='normal')
+    for X_chars, Y_chars in get_batch():
+        num_grads = numerical_gradients(tRNN, X_chars, Y_chars, h)
+        tRNN.train(X_chars, Y_chars, clip=False)
+        for k in tRNN.weights:
+            error = relative_error(tRNN.gradients[k], num_grads[k])
+            print("\n%s error:" % k)
+            print(error)
+        exit()
 
 
 def get_batch():
@@ -57,23 +49,34 @@ if __name__ == "__main__":
     eta = 0.1
     seq_length = 25
     h = 1e-4
-    n_epoch = 3
-    save = True
+    n_epoch = 20
 
     # np.random.seed(400)  # TODO: remove
+    # compare_gradients()
 
-    RNN = RNN(K, m, eta, seq_length)
+    RNN = RNN(K, m, eta, seq_length, init='xavier')
 
-    compare_gradients()
-
-    f = open('synthesized.txt', 'w+')
+    save = True
     smooth_loss = -1
-    if save:
-        smooth_loss = RNN.load()
-    losses = []
     step = -1
+    last_epoch = 0
+    if save:
+        smooth_loss, step, last_epoch = RNN.load()
+        print('last smooth_loss: %f \t last step: %d \t last epoch: %d' %
+              (smooth_loss, step, last_epoch))
+
+    synth = RNN.synthesize(make_one_hot([char_to_ind['.']], K), 1000)
+    text = ""
+    for column in synth.T:
+        text += ind_to_char[np.argmax(column)]
+    print(text.encode('ascii', 'ignore').decode('ascii'))
+    exit()
+
+    losses = []
+    f = open('synthesized-' +
+             str(datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')), 'w+')
     for epoch in range(n_epoch):
-        print("\t\t---NEW EPOCH--- number: %d" % epoch)
+        print("\t\t---NEW EPOCH--- number: %d" % (epoch + last_epoch))
         RNN.h0 = np.zeros((m, 1))
         for X_seq, Y_seq in get_batch():
             step += 1
@@ -91,7 +94,7 @@ if __name__ == "__main__":
             elif step % 100 == 0:
                 print(' ... Smooth loss: %f ...' % (smooth_loss))
         if save:
-            RNN.save(smooth_loss)
+            RNN.save(smooth_loss, step, epoch + last_epoch + 1)
 
     plt.plot(losses, 'g', label='losses')
     plt.ylabel("loss")

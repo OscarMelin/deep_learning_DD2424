@@ -44,32 +44,25 @@ def relative_error(grad, num_grad):
 
 def numerical_gradients(RNN, X, Y, h):
     grads = {}
-    print("Begin numerical gradient for U")
-    grads['U'] = numerical_gradient(RNN, RNN.U, X, Y, h)
-    print("Begin numerical gradient for W")
-    grads['W'] = numerical_gradient(RNN, RNN.W, X, Y, h)
-    print("Begin numerical gradient for V")
-    grads['V'] = numerical_gradient(RNN, RNN.V, X, Y, h)
-    print("Begin numerical gradient for b")
-    grads['b'] = numerical_gradient(RNN, RNN.b, X, Y, h)
-    print("Begin numerical gradient for c")
-    grads['c'] = numerical_gradient(RNN, RNN.c, X, Y, h)
+    for k in RNN.weights:
+        print("Begin numerical gradient for " + k)
+        grads[k] = numerical_gradient(RNN, k, X, Y, h)
     return grads
 
 
 def numerical_gradient(RNN, var, X, Y, h):
-    grad = np.zeros_like(var)
-    for i in range(var.shape[0]):
-        for j in range(var.shape[1]):
+    grad = np.zeros_like(RNN.weights[var])
+    for i in range(grad.shape[0]):
+        for j in range(grad.shape[1]):
             # normal
-            normal = var[i][j]
+            normal = RNN.weights[var][i][j]
             # back
-            var[i][j] -= h
+            RNN.weights[var][i][j] -= h
             _, _, _, c1 = RNN.forward(X, Y)
-            var[i][j] = normal
+            RNN.weights[var][i][j] = normal
             # forw
-            var[i][j] += h
+            RNN.weights[var][i][j] += h
             _, _, _, c2 = RNN.forward(X, Y)
-            var[i][j] = normal
+            RNN.weights[var][i][j] = normal
             grad[i][j] = (c2-c1) / (2*h)
     return grad

@@ -20,7 +20,7 @@ def sample_label(p):
 
 
 class RNN:
-    def __init__(self, K, m, eta, seq_length):
+    def __init__(self, K, m, eta, seq_length, init='normal'):
         self.K = K
         self.m = m
         self.eta = eta
@@ -28,14 +28,23 @@ class RNN:
         self.h0 = np.zeros((m, 1))
 
         # weights
-        sig = 0.01
-        self.weights = {
-            'U': np.random.normal(0, np.sqrt(2 / K), size=(m, K)),
-            'W': np.random.normal(0, np.sqrt(2 / m), size=(m, m)),
-            'V': np.random.normal(0, np.sqrt(2 / m), size=(K, m)),
-            'b': np.zeros((m, 1)),
-            'c': np.zeros((K, 1))
-        }
+        if init == 'xavier':
+            self.weights = {
+                'U': np.random.normal(0, 1 / np.sqrt(K), size=(m, K)),
+                'W': np.random.normal(0, 1 / np.sqrt(m), size=(m, m)),
+                'V': np.random.normal(0, 1 / np.sqrt(m), size=(K, m)),
+                'b': np.zeros((m, 1)),
+                'c': np.zeros((K, 1))
+            }
+        else:
+            sig = 0.01
+            self.weights = {
+                'U': np.random.normal(size=(m, K)) * sig,
+                'W': np.random.normal(size=(m, m)) * sig,
+                'V': np.random.normal(size=(K, m)) * sig,
+                'b': np.zeros((m, 1)),
+                'c': np.zeros((K, 1))
+            }
 
         # gradients
         self.gradients = {
@@ -54,13 +63,13 @@ class RNN:
             'c': np.zeros_like(self.weights['c'])
         }
 
-    def train(self, X_chars, Y_chars):
+    def train(self, X_chars, Y_chars, clip=True):
         """
         X_chars: (K, seq_length)
         Y_chars: (K, seq_length) one before X_chars
         """
         ps, hs, a_s, loss = self.forward(X_chars, Y_chars)
-        self.backwards(ps, hs, a_s, X_chars, Y_chars)
+        self.backwards(ps, hs, a_s, X_chars, Y_chars, clip)
 
         for k, v in self.ada_m.items():
             self.ada_m[k] = v + self.gradients[k]**2
@@ -96,7 +105,7 @@ class RNN:
         loss = - loss
         return ps, hs, a_s, loss
 
-    def backwards(self, ps, hs, a_s, X_chars, Y_chars):
+    def backwards(self, ps, hs, a_s, X_chars, Y_chars, clip):
         n = X_chars.shape[1]
         # propagate back over sigmoid
         g = -(Y_chars - ps).T
@@ -129,7 +138,8 @@ class RNN:
         # Calc grad U
         self.gradients['U'] = np.matmul(g.T, X_chars.T)
 
-        self.clip_gradients()
+        if clip:
+            self.clip_gradients()
 
     def clip_gradients(self):
         for k, v in self.gradients.items():
@@ -158,16 +168,17 @@ class RNN:
 
         return Y
 
-    def save(self, smooth_loss):
+    def save(self, smooth_loss, step, epoch):
         for k, v in self.weights.items():
-            np.save(k, v)
+            np.save('weights/' + k, v)
         for k, v in self.ada_m.items():
-            np.save('ada_m_' + k, v)
-        np.save('smooth_loss', [smooth_loss])
+            np.save('weights/ada_m_' + k, v)
+        np.save('weights/training_params', [smooth_loss, step, epoch])
 
     def load(self):
         for k in self.weights:
-            self.weights[k] = np.load(k + '.npy')
+            self.weights[k] = np.load('weights/' + k + '.npy')
         for k in self.ada_m:
-            self.ada_m[k] = np.load('ada_m_' + k + '.npy')
-        return np.load('smooth_loss.npy')[0]
+            self.ada_m[k] = np.load('weights/ada_m_' + k + '.npy')
+        tr_params = np.load('weights/training_params.npy')
+        return tr_params[0], tr_params[1], tr_params[2]
