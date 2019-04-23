@@ -1,56 +1,48 @@
 from helpers import *
 from RNN import RNN
 import numpy as np
+import matplotlib.pyplot as plt
 
 
-def synthesize():
-    h0 = np.zeros((m, 1))
-    x0 = make_one_hot([char_to_ind['.']], K)
-    test = RNN.synthesize(h0, x0, seq_length)
-    text = back_to_text(test)
-    print(text)
-
-
-def back_to_text(synthesized):
+def synthesize(X_seq):
+    x0 = X_seq[:, 0:1]
+    synth = RNN.synthesize(x0, 200)
     text = ""
-    for column in synthesized.T:
+    for column in synth.T:
         text += ind_to_char[np.argmax(column)]
-    return text.encode()
+    return text
 
 
 def compare_gradients():
+    X_chars, Y_chars = get_batch()
     num_grads = numerical_gradients(RNN, X_chars, Y_chars, h)
     RNN.train(X_chars, Y_chars)
     V_error = relative_error(RNN.grad_V, num_grads['V'])
-    print()
-    print("V error:")
+    print("\nV error:")
     print(V_error)
     W_error = relative_error(RNN.grad_W, num_grads['W'])
-    print()
-    print("W error:")
+    print("\nW error:")
     print(W_error)
     U_error = relative_error(RNN.grad_U, num_grads['U'])
-    print()
-    print("U error:")
+    print("\nU error:")
     print(U_error)
     b_error = relative_error(RNN.grad_b, num_grads['b'])
-    print()
-    print("b error:")
+    print("\nb error:")
     print(b_error)
     c_error = relative_error(RNN.grad_c, num_grads['c'])
-    print()
-    print("c error:")
+    print("\nc error:")
     print(c_error)
+    exit()
 
 
 def get_batch():
     e = 0
-    while e + seq_length < book_data:
+    while e + seq_length < len(book_data):
         X_batch = book_data[e: seq_length + e]
-        Y_batch = book_data[e + 1: seq_length + e + 1]
         X_batch = [char_to_ind[c] for c in X_batch]
-        Y_batch = [char_to_ind[c] for c in Y_batch]
         X_batch = make_one_hot(X_batch, K)
+        Y_batch = book_data[e + 1: seq_length + e + 1]
+        Y_batch = [char_to_ind[c] for c in Y_batch]
         Y_batch = make_one_hot(Y_batch, K)
         e += seq_length
         yield X_batch, Y_batch
@@ -65,18 +57,43 @@ if __name__ == "__main__":
     eta = 0.1
     seq_length = 25
     h = 1e-4
-    n_epoch = 1
+    n_epoch = 3
+    save = True
 
-    np.random.seed(400)  # TODO: remove
+    # np.random.seed(400)  # TODO: remove
 
     RNN = RNN(K, m, eta, seq_length)
 
-    # compare_gradients()
-    # exit()
+    compare_gradients()
 
+    f = open('synthesized.txt', 'w+')
+    smooth_loss = -1
+    if save:
+        smooth_loss = RNN.load()
+    losses = []
+    step = -1
     for epoch in range(n_epoch):
-        e = 0
+        print("\t\t---NEW EPOCH--- number: %d" % epoch)
+        RNN.h0 = np.zeros((m, 1))
         for X_seq, Y_seq in get_batch():
-            if e == 0:
-                RNN.h0 = np.zeros((m, 1))
-            RNN.train(X_seq, Y_seq)
+            step += 1
+            loss = RNN.train(X_seq, Y_seq)
+            smooth_loss = 0.999*smooth_loss + 0.001*loss if smooth_loss != -1 else loss
+            losses.append(smooth_loss)
+
+            if step % 500 == 0:
+                f.write('\n\tSynthesized text at iteration: %d with smooth loss: %f\n' % (
+                    step, smooth_loss))
+                text = synthesize(X_seq)
+                f.write(text.encode('ascii', 'ignore').decode('ascii'))
+                f.write('\n')
+                f.flush()
+            elif step % 100 == 0:
+                print(' ... Smooth loss: %f ...' % (smooth_loss))
+        if save:
+            RNN.save(smooth_loss)
+
+    plt.plot(losses, 'g', label='losses')
+    plt.ylabel("loss")
+    plt.legend()
+    plt.show()

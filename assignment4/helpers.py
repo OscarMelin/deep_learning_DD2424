@@ -5,9 +5,9 @@ def load_data():
     f = open("goblet_book.txt", "r", encoding='utf-8')
     if f.mode != 'r':
         exit()
-    content = f.read()
+    book_data = f.read()
     f.close()
-    book_data = content.lower()
+    # book_data = book_data.lower()
     # Get all unique chars
     book_chars = list(book_data)
     book_chars = set(book_chars)
