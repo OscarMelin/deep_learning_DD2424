@@ -20,11 +20,10 @@ def sample_label(p):
 
 
 class RNN:
-    def __init__(self, K, m, eta, seq_length, init='normal'):
+    def __init__(self, K, m, eta, init='normal'):
         self.K = K
         self.m = m
         self.eta = eta
-        self.seq_length = seq_length
         self.h0 = np.zeros((m, 1))
 
         # weights
@@ -154,6 +153,7 @@ class RNN:
         Y = np.empty((x0.shape[0], 0))
         h = self.h0
         x = x0
+        Y = np.append(Y, x, axis=1)
         for t in range(n):
             a = np.matmul(
                 self.weights['W'], h) + np.matmul(self.weights['U'], x) + self.weights['b']
@@ -165,6 +165,8 @@ class RNN:
 
             x = make_one_hot([idx], self.K)
             Y = np.append(Y, x, axis=1)
+            if idx == self.K-1:  # stop char
+                return Y
 
         return Y
 

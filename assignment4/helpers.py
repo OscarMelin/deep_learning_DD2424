@@ -1,19 +1,23 @@
 import numpy as np
+import json
 
 
 def load_data():
-    f = open("goblet_book.txt", "r", encoding='utf-8')
+    f = open("trump_2018.json", "r", encoding='utf-8')
     if f.mode != 'r':
         exit()
-    book_data = f.read()
+    book_data = json.load(f)
     f.close()
-    # book_data = book_data.lower()
+
+    tweets = [tweet_info['text']+'Ω' for tweet_info in book_data]
+
+    book_data = " ".join(tweets)
     # Get all unique chars
     book_chars = list(book_data)
     book_chars = set(book_chars)
     book_chars = list(book_chars)
     book_chars = sorted(book_chars)
-    return book_chars, book_data
+    return book_chars, book_data, tweets
 
 
 def get_mappings(book_chars):
