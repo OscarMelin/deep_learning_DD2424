@@ -63,14 +63,14 @@ if __name__ == "__main__":
     K = len(book_chars)  # dimention 269
     m = 100  # hidden state size
     eta = 0.1
-    seq_length = 10
+    seq_length = 15
     n_epoch = 3
 
     # np.random.seed(400)  # TODO: remove
     h = 1e-4
     # compare_gradients()
 
-    RNN = RNN(K, m, eta)  # , init='xavier')
+    RNN = RNN(K, m, eta, init='xavier')
 
     save = True
     load = True
@@ -83,12 +83,12 @@ if __name__ == "__main__":
         print('last smooth_loss: %f \t last step: %d \t last epoch: %d' %
               (smooth_loss, step, last_epoch))
 
-    text = synthesize(make_one_hot([char_to_ind['F']], K))
+    text = synthesize(make_one_hot([char_to_ind['M']], K))
     print(text.encode('ascii', 'ignore').decode('ascii'))
     exit()
 
     losses = []
-    f = open('synthesized/' +
+    f = open('synthesized/seq_' + str(seq_length) + '_' +
              str(datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')) + '.txt', 'wb+')
     for epoch in range(n_epoch):
         print("\t\t---NEW EPOCH--- number: %d/%d" %
